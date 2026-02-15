@@ -1,4 +1,5 @@
 import re
+import sys
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
@@ -25,11 +26,9 @@ class CompilerRunner(QObject):
         self._output_buffer = ""
         self._error_buffer = ""
         
-        # In the future, we can pass the phase to the compiler
-        # For now, the dummy compiler runs all phases at once.
-        # command = f"python compiler/compiler.py {source_file} --phase={phase}"
-        command = f"python compiler/compiler.py {source_file}"
-        self.process.start(command)
+        # Using sys.executable ensures we use the same python interpreter
+        # and separating arguments is more robust.
+        self.process.start(sys.executable, ["compiler/compiler.py", source_file])
 
     def run_lexical_analysis(self, source_file: str) -> None:
         self._run_compiler(source_file, "lexical")
