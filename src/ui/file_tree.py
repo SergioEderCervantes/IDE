@@ -1,6 +1,5 @@
-from PySide6.QtWidgets import QTreeView, QWidget, QVBoxLayout
+from PySide6.QtWidgets import QTreeView, QWidget, QVBoxLayout, QFileSystemModel
 from PySide6.QtCore import QDir, Signal
-from PySide6.QtGui import QFileSystemModel
 
 class FileTree(QWidget):
     """
