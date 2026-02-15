@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QTabWidget, QTextEdit, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QTabWidget, QTextEdit, QVBoxLayout, QWidget
 from src.utils.constants import OUTPUT_TAB_NAMES
 
 class OutputTabs(QTabWidget):

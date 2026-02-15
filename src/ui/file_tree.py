@@ -1,14 +1,15 @@
-from PySide6.QtWidgets import QTreeView, QWidget, QVBoxLayout, QFileSystemModel
-from PySide6.QtCore import QDir, Signal
+from PyQt6.QtWidgets import QTreeView, QWidget, QVBoxLayout
+from PyQt6.QtGui import QFileSystemModel
+from PyQt6.QtCore import QDir, pyqtSignal
 
 class FileTree(QWidget):
     """
     A widget that displays a file system tree view.
     Emits a signal when a file is double-clicked.
     """
-    file_double_clicked = Signal(str)
+    file_double_clicked = pyqtSignal(str)
 
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: QWidget = None): # type: ignore
         super().__init__(parent)
         
         # Layout

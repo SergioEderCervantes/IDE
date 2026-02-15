@@ -1,13 +1,13 @@
 import re
-from PySide6.QtCore import QObject, QProcess, Signal
+from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
     """
     Runs the external compiler script asynchronously and parses its output.
     """
-    compilation_started = Signal()
-    compilation_finished = Signal(dict)  # Emits a dictionary with parsed results
-    compilation_error = Signal(str)      # Emits an error message
+    compilation_started = pyqtSignal()
+    compilation_finished = pyqtSignal(dict)  # Emits a dictionary with parsed results
+    compilation_error = pyqtSignal(str)      # Emits an error message
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -70,8 +70,7 @@ class CompilerRunner(QObject):
         """
         results = {}
         # Regex to find all sections
-        pattern = re.compile(r"===(?P<name>\w+)===
-(?P<content>.*?)===END_\w+===", re.DOTALL)
+        pattern = re.compile(r"""===(?P<name>\w+)===\n(?P<content>.*?)===END_\w+===""", re.DOTALL)
         
         for match in pattern.finditer(output):
             name = match.group('name').lower()

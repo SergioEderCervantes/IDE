@@ -1,24 +1,24 @@
 from PyQt6.Qsci import QsciScintilla
-from PySide6.QtGui import QFont, QColor
-from PySide6.QtWidgets import QWidget
+from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtWidgets import QWidget # Keep this import for parent type hints if needed, but not for inheritance
 
-class EditorWidget(QsciScintilla):
+class EditorWidget(QsciScintilla): # Inherit directly from QsciScintilla
     """
     A custom code editor widget based on QScintilla
     with line numbers and basic styling.
     """
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: QWidget = None): # parent should be QWidget from PyQt6
         super().__init__(parent)
         
         # Basic setup
         self.setUtf8(True)
         font = QFont("Courier New", 10)
-        self.setFont(font)
+        self.setFont(font) # This should now work as QFont is from PyQt6
         
         # Line numbers
         self.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
         self.setMarginWidth(0, "0000")
-        self.setMarginsForegroundColor(QColor("#888888"))
+        self.setMarginsForegroundColor(QColor("#888888")) # This should be fine
         
         # Other settings
         self.setIndentationGuides(True)
