@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, 
-    QSplitter, QStatusBar, QFileDialog, QMessageBox
+    QSplitter, QStatusBar, QFileDialog, QMessageBox, QStyle
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
@@ -47,17 +47,18 @@ class MainWindow(QMainWindow):
 
     def _create_actions(self):
         """Creates QAction instances for menus and toolbars."""
-        self.new_action = QAction("&New", self, shortcut=QKeySequence.StandardKey.New, triggered=self._new_file)
-        self.open_action = QAction("&Open...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
-        self.save_action = QAction("&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
-        self.save_as_action = QAction("Save &As...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
-        self.exit_action = QAction("E&xit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
+        style = self.style()
+        self.new_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_FileIcon), "&New", self, shortcut=QKeySequence.StandardKey.New, triggered=self._new_file)
+        self.open_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon), "&Open...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
+        self.save_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
+        self.save_as_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "Save &As...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
+        self.exit_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton), "E&xit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
 
-        self.lexical_action = QAction("Lexical Analysis", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
-        self.syntactic_action = QAction("Syntactic Analysis", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis))
-        self.semantic_action = QAction("Semantic Analysis", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis))
-        self.intermediate_action = QAction("Intermediate Code", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation))
-        self.execute_action = QAction("Execute", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution))
+        self.lexical_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Lexical Analysis", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
+        self.syntactic_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Syntactic Analysis", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis))
+        self.semantic_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Semantic Analysis", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis))
+        self.intermediate_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Intermediate Code", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation))
+        self.execute_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay), "Execute", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution))
 
     def _create_menus(self):
         """Creates the main menu bar."""
@@ -79,12 +80,17 @@ class MainWindow(QMainWindow):
 
     def _create_toolbar(self):
         """Creates the toolbar."""
-        toolbar = self.addToolBar("Compile")
-        toolbar.addAction(self.lexical_action)
-        toolbar.addAction(self.syntactic_action)
-        toolbar.addAction(self.semantic_action)
-        toolbar.addAction(self.intermediate_action)
-        toolbar.addAction(self.execute_action)
+        file_toolbar = self.addToolBar("File")
+        file_toolbar.addAction(self.new_action)
+        file_toolbar.addAction(self.open_action)
+        file_toolbar.addAction(self.save_action)
+
+        compile_toolbar = self.addToolBar("Compile")
+        compile_toolbar.addAction(self.lexical_action)
+        compile_toolbar.addAction(self.syntactic_action)
+        compile_toolbar.addAction(self.semantic_action)
+        compile_toolbar.addAction(self.intermediate_action)
+        compile_toolbar.addAction(self.execute_action)
 
     def _create_status_bar(self):
         """Creates the status bar."""
