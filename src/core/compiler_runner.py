@@ -1,5 +1,6 @@
 import re
 import sys
+import locale
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
@@ -19,6 +20,16 @@ class CompilerRunner(QObject):
 
         self._output_buffer = ""
         self._error_buffer = ""
+        self._encodings = [locale.getpreferredencoding(False), "utf-8", "cp1252", "latin-1"]
+
+    def _decode_process_output(self, data: bytes) -> str:
+        """Decode process output robustly across platform default encodings."""
+        for encoding in self._encodings:
+            try:
+                return data.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return data.decode("utf-8", errors="replace")
 
     def _run_compiler(self, source_file: str, phase: str):
         """Private method to start the compiler process."""
@@ -47,11 +58,13 @@ class CompilerRunner(QObject):
 
     def _handle_stdout(self):
         """Append standard output to the buffer."""
-        self._output_buffer += self.process.readAllStandardOutput().data().decode()
+        data = bytes(self.process.readAllStandardOutput())
+        self._output_buffer += self._decode_process_output(data)
 
     def _handle_stderr(self):
         """Append standard error to the buffer."""
-        self._error_buffer += self.process.readAllStandardError().data().decode()
+        data = bytes(self.process.readAllStandardError())
+        self._error_buffer += self._decode_process_output(data)
 
     def _handle_finished(self):
         """Called when the process is finished. Parses output and emits signals."""

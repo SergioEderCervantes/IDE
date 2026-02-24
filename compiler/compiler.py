@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 import sys
 
+
+def _configure_io_encoding() -> None:
+    """Ensure process output can emit Unicode consistently across platforms."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 def main():
+    _configure_io_encoding()
+
     if len(sys.argv) < 2:
         print("Uso: compiler.py <archivo_fuente>", file=sys.stderr)
         sys.exit(1)

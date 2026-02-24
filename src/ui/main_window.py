@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, 
-    QSplitter, QStatusBar, QFileDialog, QMessageBox, QStyle
+    QSplitter, QStatusBar, QFileDialog, QMessageBox, QStyle, QLabel
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         self.open_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon), "&Open...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
         self.save_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
         self.save_as_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "Save &As...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
+        self.close_file_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton), "&Close", self, shortcut=QKeySequence.StandardKey.Close, triggered=self._close_file)
         self.exit_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton), "E&xit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
 
         self.lexical_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Lexical Analysis", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.open_action)
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
+        file_menu.addAction(self.close_file_action)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
@@ -96,6 +98,9 @@ class MainWindow(QMainWindow):
         """Creates the status bar."""
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+
+        self.cursor_position_label = QLabel("Line: 1, Column: 1")
+        self.status_bar.addPermanentWidget(self.cursor_position_label)
         self.status_bar.showMessage("Ready")
 
     def _connect_signals(self):
@@ -111,13 +116,23 @@ class MainWindow(QMainWindow):
     def _update_status_bar(self):
         line = self.editor_widget.get_current_line_number()
         col = self.editor_widget.get_current_column_number()
-        self.status_bar.showMessage(f"Line: {line}, Column: {col}")
+        self.cursor_position_label.setText(f"Line: {line}, Column: {col}")
 
     def _new_file(self):
         if self._prompt_to_save():
             self.editor_widget.clear()
             self.file_manager.new_file()
             self.setWindowTitle("Compiler IDE - Untitled")
+
+    def _close_file(self):
+        if not self._prompt_to_save():
+            return
+
+        self.editor_widget.clear_editor()
+        self.output_tabs.clear_all()
+        self.file_manager.new_file()
+        self.setWindowTitle("Compiler IDE - Untitled")
+        self.status_bar.showMessage("File closed", 3000)
 
     def _open_file(self):
         if not self._prompt_to_save():
