@@ -1,2 +1,4 @@
 PyQt6
 PyQt6-QScintilla>=2.14.0
+qt-material>=2.14
+QtAwesome>=1.2.0

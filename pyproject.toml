@@ -5,6 +5,8 @@ requires-python = ">=3.10"
 dependencies = [
     "PyQt6",
     "PyQt6-QScintilla>=2.14.0",
+    "qt-material>=2.14",
+    "QtAwesome>=1.2.0",
 ]
 
 [build-system]

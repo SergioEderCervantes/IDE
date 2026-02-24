@@ -2,9 +2,12 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, 
     QSplitter, QStatusBar, QFileDialog, QMessageBox, QStyle, QLabel
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QAction, QKeySequence, QActionGroup, QIcon
 from pathlib import Path
+from qt_material import apply_stylesheet
+import os
+import qtawesome as qta
 from src.ui.editor_widget import EditorWidget
 from src.ui.file_tree import FileTree
 from src.ui.output_tabs import OutputTabs
@@ -14,13 +17,30 @@ from src.core.compiler_runner import CompilerRunner
 class MainWindow(QMainWindow):
     """The main window of the IDE, containing all UI components."""
 
-    def __init__(self):
+    def __init__(self, app=None):
         super().__init__()
-        self.setWindowTitle("Compiler IDE - Untitled")
+        self.setWindowTitle("Liga de los Compiladores - Untitled")
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Load and set window icon
+        icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'logoIDE.jpg')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
+        self.app = app
         self.file_manager = FileManager()
         self.compiler_runner = CompilerRunner()
+        self.ignore_text_changes = False  # Flag to ignore programmatic text changes
+        
+        # Theme definitions: (theme_name, display_name, is_light)
+        self.themes = [
+            ('dark_purple.xml', 'Dark Purple', False),
+            ('dark_blue.xml', 'Dark Blue', False),
+            ('tokyo_night', 'Tokyo Night', False),
+            ('light_blue.xml', 'Light Blue', True),
+            ('light_cyan.xml', 'Light Cyan', True),
+        ]
+        self.current_theme = 'dark_purple.xml'
 
         self._setup_ui()
         self._create_actions()
@@ -47,20 +67,24 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_splitter)
 
     def _create_actions(self):
-        """Creates QAction instances for menus and toolbars."""
-        style = self.style()
-        self.new_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_FileIcon), "&New", self, shortcut=QKeySequence.StandardKey.New, triggered=self._new_file)
-        self.open_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon), "&Open...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
-        self.save_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
-        self.save_as_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "Save &As...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
-        self.close_file_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton), "&Close", self, shortcut=QKeySequence.StandardKey.Close, triggered=self._close_file)
-        self.exit_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton), "E&xit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
+        """Creates QAction instances for menus and toolbars with modern icons."""
+        # File actions with QtAwesome icons
+        self.new_action = QAction(qta.icon('fa6s.file', color='white'), "&New", self, shortcut=QKeySequence.StandardKey.New, triggered=self._new_file)
+        self.open_action = QAction(qta.icon('fa6s.folder-open', color='white'), "&Open...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
+        self.save_action = QAction(qta.icon('fa6s.floppy-disk', color='white'), "&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
+        self.save_as_action = QAction(qta.icon('fa6s.file-export', color='white'), "Save &As...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
+        self.close_file_action = QAction(qta.icon('fa6s.xmark', color='white'), "&Close", self, shortcut=QKeySequence.StandardKey.Close, triggered=self._close_file)
+        self.exit_action = QAction(qta.icon('fa6s.door-open', color='white'), "E&xit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
 
-        self.lexical_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Lexical Analysis", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
-        self.syntactic_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Syntactic Analysis", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis))
-        self.semantic_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Semantic Analysis", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis))
-        self.intermediate_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight), "Intermediate Code", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation))
-        self.execute_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay), "Execute", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution))
+        # Store file action references for icon color updates
+        self.file_actions = [self.new_action, self.open_action, self.save_action, self.save_as_action, self.close_file_action, self.exit_action]
+
+        # Compiler phase actions with QtAwesome icons
+        self.lexical_action = QAction(qta.icon('fa6s.code', color='#61dafb'), "Lexical Analysis", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
+        self.syntactic_action = QAction(qta.icon('fa6s.diagram-project', color='#61dafb'), "Syntactic Analysis", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis))
+        self.semantic_action = QAction(qta.icon('fa6s.circle-check', color='#61dafb'), "Semantic Analysis", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis))
+        self.intermediate_action = QAction(qta.icon('fa6s.terminal', color='#61dafb'), "Intermediate Code", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation))
+        self.execute_action = QAction(qta.icon('fa6s.play', color='#61dafb'), "Execute", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution))
 
     def _create_menus(self):
         """Creates the main menu bar."""
@@ -80,19 +104,25 @@ class MainWindow(QMainWindow):
         compile_menu.addAction(self.intermediate_action)
         compile_menu.addSeparator()
         compile_menu.addAction(self.execute_action)
+        
+        self._create_theme_menu()
 
     def _create_toolbar(self):
-        """Creates the toolbar."""
+        """Creates the toolbar with modern styling."""
         file_toolbar = self.addToolBar("File")
+        file_toolbar.setIconSize(QSize(20, 20))
         file_toolbar.addAction(self.new_action)
         file_toolbar.addAction(self.open_action)
         file_toolbar.addAction(self.save_action)
+        file_toolbar.addSeparator()
 
         compile_toolbar = self.addToolBar("Compile")
+        compile_toolbar.setIconSize(QSize(20, 20))
         compile_toolbar.addAction(self.lexical_action)
         compile_toolbar.addAction(self.syntactic_action)
         compile_toolbar.addAction(self.semantic_action)
         compile_toolbar.addAction(self.intermediate_action)
+        compile_toolbar.addSeparator()
         compile_toolbar.addAction(self.execute_action)
 
     def _create_status_bar(self):
@@ -108,11 +138,17 @@ class MainWindow(QMainWindow):
         """Connects signals from widgets to main window slots."""
         self.file_tree.file_double_clicked.connect(self._open_file_from_path)
         self.editor_widget.cursorPositionChanged.connect(self._update_status_bar)
-        self.editor_widget.textChanged.connect(lambda: self.file_manager.mark_modified(True))
+        # Only mark as modified if not ignoring text changes
+        self.editor_widget.textChanged.connect(self._on_text_changed)
         
         self.compiler_runner.compilation_started.connect(lambda: self.status_bar.showMessage("Compiling..."))
         self.compiler_runner.compilation_finished.connect(self._handle_compilation_finished)
         self.compiler_runner.compilation_error.connect(self._handle_compilation_error)
+    
+    def _on_text_changed(self):
+        """Handle text changes, respecting the ignore flag."""
+        if not self.ignore_text_changes:
+            self.file_manager.mark_modified(True)
 
     def _update_status_bar(self):
         line = self.editor_widget.get_current_line_number()
@@ -121,18 +157,22 @@ class MainWindow(QMainWindow):
 
     def _new_file(self):
         if self._prompt_to_save():
+            self.ignore_text_changes = True
             self.editor_widget.clear()
             self.file_manager.new_file()
-            self.setWindowTitle("Compiler IDE - Untitled")
+            self.ignore_text_changes = False
+            self.setWindowTitle("Liga de los Compiladores - Untitled")
 
     def _close_file(self):
         if not self._prompt_to_save():
             return
 
-        self.editor_widget.clear_editor()
+        self.ignore_text_changes = True
+        self.editor_widget.clear()
         self.output_tabs.clear_all()
         self.file_manager.new_file()
-        self.setWindowTitle("Compiler IDE - Untitled")
+        self.ignore_text_changes = False
+        self.setWindowTitle("Liga de los Compiladores - Untitled")
         self.status_bar.showMessage("File closed", 3000)
 
     def _open_file(self):
@@ -145,9 +185,11 @@ class MainWindow(QMainWindow):
     def _open_file_from_path(self, file_path: str):
         try:
             content = self.file_manager.open_file(file_path)
+            self.ignore_text_changes = True
             self.editor_widget.set_text(content)
+            self.ignore_text_changes = False
             self.file_tree.set_root_path(str(Path(file_path).parent))
-            self.setWindowTitle(f"Compiler IDE - {self.file_manager.get_current_file().name}")
+            self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open file: {e}")
 
@@ -158,7 +200,7 @@ class MainWindow(QMainWindow):
         content = self.editor_widget.get_text()
         if self.file_manager.save_file(content):
             self.status_bar.showMessage(f"File saved.", 3000)
-            self.setWindowTitle(f"Compiler IDE - {self.file_manager.get_current_file().name}")
+            self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}")
             return True
         QMessageBox.critical(self, "Error", "Could not save file.")
         return False
@@ -169,7 +211,7 @@ class MainWindow(QMainWindow):
             content = self.editor_widget.get_text()
             if self.file_manager.save_file_as(content, file_path):
                 self.file_tree.set_root_path(str(Path(file_path).parent))
-                self.setWindowTitle(f"Compiler IDE - {self.file_manager.get_current_file().name}")
+                self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}")
                 self.status_bar.showMessage(f"File saved as {file_path}", 3000)
                 return True
             QMessageBox.critical(self, "Error", f"Could not save file to {file_path}.")
@@ -215,6 +257,60 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Compilation failed.", 5000)
         self.output_tabs.update_errors(f"COMPILER ERROR:\n{error_msg}")
         self.output_tabs.setCurrentWidget(self.output_tabs.tabs["errores"])
+
+    def _create_theme_menu(self):
+        """Creates a View menu with theme options."""
+        view_menu = self.menuBar().addMenu("&View")
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        
+        for theme_id, display_name, is_light in self.themes:
+            theme_action = QAction(display_name, self, checkable=True)
+            if theme_id == self.current_theme:
+                theme_action.setChecked(True)
+            theme_action.triggered.connect(lambda checked, t=theme_id: self._apply_theme(t))
+            theme_group.addAction(theme_action)
+            view_menu.addAction(theme_action)
+    
+    def _update_icon_colors(self, is_light: bool):
+        """Updates icon colors based on theme brightness."""
+        icon_color = '#000000' if is_light else 'white'
+        icons_config = [
+            (self.new_action, 'fa6s.file'),
+            (self.open_action, 'fa6s.folder-open'),
+            (self.save_action, 'fa6s.floppy-disk'),
+            (self.save_as_action, 'fa6s.file-export'),
+            (self.close_file_action, 'fa6s.xmark'),
+            (self.exit_action, 'fa6s.door-open'),
+        ]
+        
+        for action, icon_name in icons_config:
+            action.setIcon(qta.icon(icon_name, color=icon_color))
+        
+        # Also update file tree icons
+        self.file_tree.set_icon_color(icon_color)
+
+    def _apply_theme(self, theme_id: str):
+        """Applies a theme dynamically to the entire app and editor."""
+        if not self.app:
+            return
+        
+        self.current_theme = theme_id
+        
+        # Find if it's a light theme
+        is_light = next((t[2] for t in self.themes if t[0] == theme_id), False)
+        
+        if theme_id == 'tokyo_night':
+            theme_path = os.path.join(os.path.dirname(__file__), 'themes', 'tokyo_night.xml')
+            apply_stylesheet(self.app, theme=theme_path)
+        else:
+            apply_stylesheet(self.app, theme=theme_id, invert_secondary=is_light)
+        
+        # Update icon colors based on theme brightness
+        self._update_icon_colors(is_light)
+        
+        # Also update the editor widget theme
+        self.editor_widget.set_theme(theme_id)
 
     def closeEvent(self, event):
         if self._prompt_to_save():

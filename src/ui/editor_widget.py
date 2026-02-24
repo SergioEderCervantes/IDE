@@ -1,24 +1,23 @@
 from PyQt6.Qsci import QsciScintilla
 from PyQt6.QtGui import QFont, QColor
-from PyQt6.QtWidgets import QWidget # Keep this import for parent type hints if needed, but not for inheritance
+from PyQt6.QtWidgets import QWidget
 
-class EditorWidget(QsciScintilla): # Inherit directly from QsciScintilla
+class EditorWidget(QsciScintilla):
     """
     A custom code editor widget based on QScintilla
-    with line numbers and basic styling.
+    with line numbers, basic styling and dynamic theming.
     """
-    def __init__(self, parent: QWidget = None): # parent should be QWidget from PyQt6
+    def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         
         # Basic setup
         self.setUtf8(True)
         font = QFont("Courier New", 10)
-        self.setFont(font) # This should now work as QFont is from PyQt6
+        self.setFont(font)
         
         # Line numbers
         self.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
         self.setMarginWidth(0, "0000")
-        self.setMarginsForegroundColor(QColor("#888888")) # This should be fine
         
         # Other settings
         self.setIndentationGuides(True)
@@ -28,7 +27,59 @@ class EditorWidget(QsciScintilla): # Inherit directly from QsciScintilla
         
         # For a better look
         self.setCaretLineVisible(True)
-        self.setCaretLineBackgroundColor(QColor("#f0f0f0"))
+        
+        # Apply default dark theme
+        self.set_theme('dark_purple.xml')
+
+    def set_theme(self, theme_id: str):
+        """Apply theme colors to the editor."""
+        # Define theme color schemes: (bg, text, margin_bg, margin_fg, caret_bg)
+        themes = {
+            'dark_purple.xml': {
+                'bg': '#1e1e2e',
+                'text': '#e0e0e0',
+                'margin_bg': '#2d2d44',
+                'margin_fg': '#888888',
+                'caret_bg': '#404050',
+            },
+            'dark_blue.xml': {
+                'bg': '#0d1117',
+                'text': '#c9d1d9',
+                'margin_bg': '#161b22',
+                'margin_fg': '#6e7681',
+                'caret_bg': '#21262d',
+            },
+            'tokyo_night': {
+                'bg': '#1a1b26',
+                'text': '#c0caf5',
+                'margin_bg': '#1f202e',
+                'margin_fg': '#565f89',
+                'caret_bg': '#2a2b35',
+            },
+            'light_blue.xml': {
+                'bg': '#ffffff',
+                'text': '#000000',
+                'margin_bg': '#f3f3f3',
+                'margin_fg': '#666666',
+                'caret_bg': '#eeeeee',
+            },
+            'light_cyan.xml': {
+                'bg': '#ffffff',
+                'text': '#000000',
+                'margin_bg': '#f3f3f3',
+                'margin_fg': '#666666',
+                'caret_bg': '#eeeeee',
+            },
+        }
+        
+        colors = themes.get(theme_id, themes['dark_purple.xml'])
+        
+        # Apply colors
+        self.setMarginsBackgroundColor(QColor(colors['margin_bg']))
+        self.setMarginsForegroundColor(QColor(colors['margin_fg']))
+        self.setPaper(QColor(colors['bg']))
+        self.setColor(QColor(colors['text']))
+        self.setCaretLineBackgroundColor(QColor(colors['caret_bg']))
 
     def get_text(self) -> str:
         """Returns the entire text content of the editor."""
@@ -47,7 +98,3 @@ class EditorWidget(QsciScintilla): # Inherit directly from QsciScintilla
         """Returns the current column number (1-indexed)."""
         _, col = self.getCursorPosition()
         return col + 1
-    
-    def clear_editor(self):
-        """Clears all text from the editor."""
-        self.clear()
