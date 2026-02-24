@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QTreeView, QWidget, QVBoxLayout
 from PyQt6.QtGui import QFileSystemModel
-from PyQt6.QtCore import QDir, pyqtSignal
+from PyQt6.QtCore import QDir, pyqtSignal, QStandardPaths
 
 class FileTree(QWidget):
     """
@@ -18,16 +18,19 @@ class FileTree(QWidget):
         
         # File system model
         self.model = QFileSystemModel()
-        self.model.setRootPath(QDir.currentPath())
+        initial_root = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        if not initial_root:
+            initial_root = QDir.homePath()
+        self.model.setRootPath(initial_root)
         
-        # Filters: show only common source code files
-        self.model.setNameFilters(["*.txt", "*.c", "*.cpp", "*.py", "*.java", "*.md"])
+        # Filters: show only source-like files for compiler inputs
+        self.model.setNameFilters(["*.txt", "*.c", "*.cpp", "*.java"])
         self.model.setNameFilterDisables(False) # Show only filtered files
         
         # Tree view
         self.tree = QTreeView()
         self.tree.setModel(self.model)
-        self.tree.setRootIndex(self.model.index(QDir.currentPath()))
+        self.tree.setRootIndex(self.model.index(initial_root))
         
         # Visual settings
         self.tree.setColumnWidth(0, 250)

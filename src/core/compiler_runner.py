@@ -20,7 +20,7 @@ class CompilerRunner(QObject):
 
         self._output_buffer = ""
         self._error_buffer = ""
-        self._encodings = [locale.getpreferredencoding(False), "utf-8", "cp1252", "latin-1"]
+        self._encodings = ["utf-8", locale.getpreferredencoding(False), "cp1252", "latin-1"]
 
     def _decode_process_output(self, data: bytes) -> str:
         """Decode process output robustly across platform default encodings."""
@@ -39,7 +39,7 @@ class CompilerRunner(QObject):
         
         # Using sys.executable ensures we use the same python interpreter
         # and separating arguments is more robust.
-        self.process.start(sys.executable, ["compiler/compiler.py", source_file])
+        self.process.start(sys.executable, ["compiler/compiler.py", source_file, phase])
 
     def run_lexical_analysis(self, source_file: str) -> None:
         self._run_compiler(source_file, "lexical")
@@ -82,7 +82,7 @@ class CompilerRunner(QObject):
         """
         results = {}
         # Regex to find all sections
-        pattern = re.compile(r"""===(?P<name>\w+)===\n(?P<content>.*?)===END_\w+===""", re.DOTALL)
+        pattern = re.compile(r"""===(?P<name>\w+)===\r?\n(?P<content>.*?)===END_(?P=name)===""", re.DOTALL)
         
         for match in pattern.finditer(output):
             name = match.group('name').lower()

@@ -17,13 +17,27 @@ def main():
     _configure_io_encoding()
 
     if len(sys.argv) < 2:
-        print("Uso: compiler.py <archivo_fuente>", file=sys.stderr)
+        print("Uso: compiler.py <archivo_fuente> [fase]", file=sys.stderr)
         sys.exit(1)
     
     source_file = sys.argv[1]
+    phase = sys.argv[2].lower() if len(sys.argv) > 2 else "all"
+
+    phase_titles = {
+        "lexical": "Análisis Léxico",
+        "syntactic": "Análisis Sintáctico",
+        "semantic": "Análisis Semántico",
+        "intermediate": "Generación de Código Intermedio",
+        "execution": "Ejecución",
+        "all": "Compilación Completa",
+    }
+
+    selected_title = phase_titles.get(phase, "Compilación Completa")
     
     # Simular salida estructurada
     print("===TOKENS===")
+    if phase in ("all", "lexical"):
+        print(f"Fase solicitada: {selected_title}")
     print("INT: 'int' (línea 1, col 0)")
     print("IDENTIFIER: 'x' (línea 1, col 4)")
     print("ASSIGN: '=' (línea 1, col 6)")
@@ -31,6 +45,8 @@ def main():
     print("===END_TOKENS===")
     
     print("===AST===")
+    if phase in ("all", "syntactic"):
+        print(f"Fase solicitada: {selected_title}")
     print("Program")
     print("  └─ VarDeclaration")
     print("      ├─ Type: int")
@@ -39,10 +55,14 @@ def main():
     print("===END_AST===")
     
     print("===SEMANTIC===")
+    if phase in ("all", "semantic"):
+        print(f"Fase solicitada: {selected_title}")
     print("✓ Sin errores semánticos")
     print("===END_SEMANTIC===")
     
     print("===INTERMEDIATE===")
+    if phase in ("all", "intermediate"):
+        print(f"Fase solicitada: {selected_title}")
     print("t1 = 5")
     print("x = t1")
     print("===END_INTERMEDIATE===")
@@ -56,6 +76,8 @@ def main():
     print("===END_ERRORS===")
     
     print("===EXECUTION===")
+    if phase in ("all", "execution"):
+        print(f"Fase solicitada: {selected_title}")
     print("Hello World from Compiler!")
     print("===END_EXECUTION===")
 

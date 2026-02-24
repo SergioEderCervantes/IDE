@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
+from pathlib import Path
 from src.ui.editor_widget import EditorWidget
 from src.ui.file_tree import FileTree
 from src.ui.output_tabs import OutputTabs
@@ -145,6 +146,7 @@ class MainWindow(QMainWindow):
         try:
             content = self.file_manager.open_file(file_path)
             self.editor_widget.set_text(content)
+            self.file_tree.set_root_path(str(Path(file_path).parent))
             self.setWindowTitle(f"Compiler IDE - {self.file_manager.get_current_file().name}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open file: {e}")
@@ -166,6 +168,7 @@ class MainWindow(QMainWindow):
         if file_path:
             content = self.editor_widget.get_text()
             if self.file_manager.save_file_as(content, file_path):
+                self.file_tree.set_root_path(str(Path(file_path).parent))
                 self.setWindowTitle(f"Compiler IDE - {self.file_manager.get_current_file().name}")
                 self.status_bar.showMessage(f"File saved as {file_path}", 3000)
                 return True
