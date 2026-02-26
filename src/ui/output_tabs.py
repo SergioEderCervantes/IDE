@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QTabWidget, QTextEdit, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QTabWidget, QTextEdit, QWidget
 from src.utils.constants import OUTPUT_TAB_NAMES
 
 class OutputTabs(QTabWidget):
@@ -22,7 +22,7 @@ class OutputTabs(QTabWidget):
         self.tabs["tokens"].setText(content)
 
     def update_ast(self, content: str):
-        self.tabs["ast"].setText(content)
+        self.tabs["sintáctico"].setText(content)
 
     def update_semantic(self, content: str):
         self.tabs["semántico"].setText(content)

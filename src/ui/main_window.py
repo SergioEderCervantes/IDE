@@ -1,6 +1,10 @@
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, 
-    QSplitter, QStatusBar, QFileDialog, QMessageBox, QStyle, QLabel
+    QMainWindow,
+    QSplitter,
+    QStatusBar,
+    QFileDialog,
+    QMessageBox,
+    QLabel,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QKeySequence, QActionGroup, QIcon
@@ -19,7 +23,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, app=None):
         super().__init__()
-        self.setWindowTitle("Liga de los Compiladores - Untitled")
+        self.setWindowTitle("Liga de los Compiladores - Sin título")
         self.setGeometry(100, 100, 1200, 800)
         
         # Load and set window icon
@@ -69,26 +73,38 @@ class MainWindow(QMainWindow):
     def _create_actions(self):
         """Creates QAction instances for menus and toolbars with modern icons."""
         # File actions with QtAwesome icons
-        self.new_action = QAction(qta.icon('fa6s.file', color='white'), "&New", self, shortcut=QKeySequence.StandardKey.New, triggered=self._new_file)
-        self.open_action = QAction(qta.icon('fa6s.folder-open', color='white'), "&Open...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
-        self.save_action = QAction(qta.icon('fa6s.floppy-disk', color='white'), "&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
-        self.save_as_action = QAction(qta.icon('fa6s.file-export', color='white'), "Save &As...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
-        self.close_file_action = QAction(qta.icon('fa6s.xmark', color='white'), "&Close", self, shortcut=QKeySequence.StandardKey.Close, triggered=self._close_file)
-        self.exit_action = QAction(qta.icon('fa6s.door-open', color='white'), "E&xit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
+        self.new_action = QAction(qta.icon('fa6s.file', color='white'), "&Nuevo", self, shortcut=QKeySequence.StandardKey.New, triggered=self._new_file)
+        self.open_action = QAction(qta.icon('fa6s.folder-open', color='white'), "&Abrir...", self, shortcut=QKeySequence.StandardKey.Open, triggered=self._open_file)
+        self.save_action = QAction(qta.icon('fa6s.floppy-disk', color='white'), "&Guardar", self, shortcut=QKeySequence.StandardKey.Save, triggered=self._save_file)
+        self.save_as_action = QAction(qta.icon('fa6s.file-export', color='white'), "Guardar &como...", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self._save_file_as)
+        self.close_file_action = QAction(qta.icon('fa6s.xmark', color='white'), "&Cerrar", self, shortcut=QKeySequence.StandardKey.Close, triggered=self._close_file)
+        self.exit_action = QAction(qta.icon('fa6s.door-open', color='white'), "Sa&lir", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
 
         # Store file action references for icon color updates
         self.file_actions = [self.new_action, self.open_action, self.save_action, self.save_as_action, self.close_file_action, self.exit_action]
 
         # Compiler phase actions with QtAwesome icons
-        self.lexical_action = QAction(qta.icon('fa6s.code', color='#61dafb'), "Lexical Analysis", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
-        self.syntactic_action = QAction(qta.icon('fa6s.diagram-project', color='#61dafb'), "Syntactic Analysis", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis))
-        self.semantic_action = QAction(qta.icon('fa6s.circle-check', color='#61dafb'), "Semantic Analysis", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis))
-        self.intermediate_action = QAction(qta.icon('fa6s.terminal', color='#61dafb'), "Intermediate Code", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation))
-        self.execute_action = QAction(qta.icon('fa6s.play', color='#61dafb'), "Execute", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution))
+        self.lexical_action = QAction(qta.icon('fa6s.code', color='#61dafb'), "Análisis léxico", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis))
+        self.syntactic_action = QAction(qta.icon('fa6s.diagram-project', color='#61dafb'), "Análisis sintáctico", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis))
+        self.semantic_action = QAction(qta.icon('fa6s.circle-check', color='#61dafb'), "Análisis semántico", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis))
+        self.intermediate_action = QAction(qta.icon('fa6s.terminal', color='#61dafb'), "Código intermedio", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation))
+        self.execute_action = QAction(qta.icon('fa6s.play', color='#61dafb'), "Ejecutar", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution))
+
+        self.new_action.setToolTip("Nuevo")
+        self.open_action.setToolTip("Abrir")
+        self.save_action.setToolTip("Guardar")
+        self.save_as_action.setToolTip("Guardar como")
+        self.close_file_action.setToolTip("Cerrar")
+        self.exit_action.setToolTip("Salir")
+        self.lexical_action.setToolTip("Análisis léxico")
+        self.syntactic_action.setToolTip("Análisis sintáctico")
+        self.semantic_action.setToolTip("Análisis semántico")
+        self.intermediate_action.setToolTip("Código intermedio")
+        self.execute_action.setToolTip("Ejecutar")
 
     def _create_menus(self):
         """Creates the main menu bar."""
-        file_menu = self.menuBar().addMenu("&File")
+        file_menu = self.menuBar().addMenu("&Archivo")
         file_menu.addAction(self.new_action)
         file_menu.addAction(self.open_action)
         file_menu.addAction(self.save_action)
@@ -97,7 +113,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
-        compile_menu = self.menuBar().addMenu("&Compile")
+        compile_menu = self.menuBar().addMenu("&Compilar")
         compile_menu.addAction(self.lexical_action)
         compile_menu.addAction(self.syntactic_action)
         compile_menu.addAction(self.semantic_action)
@@ -109,14 +125,14 @@ class MainWindow(QMainWindow):
 
     def _create_toolbar(self):
         """Creates the toolbar with modern styling."""
-        file_toolbar = self.addToolBar("File")
+        file_toolbar = self.addToolBar("Archivo")
         file_toolbar.setIconSize(QSize(20, 20))
         file_toolbar.addAction(self.new_action)
         file_toolbar.addAction(self.open_action)
         file_toolbar.addAction(self.save_action)
         file_toolbar.addSeparator()
 
-        compile_toolbar = self.addToolBar("Compile")
+        compile_toolbar = self.addToolBar("Compilar")
         compile_toolbar.setIconSize(QSize(20, 20))
         compile_toolbar.addAction(self.lexical_action)
         compile_toolbar.addAction(self.syntactic_action)
@@ -130,9 +146,9 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
-        self.cursor_position_label = QLabel("Line: 1, Column: 1")
+        self.cursor_position_label = QLabel("Línea: 1, Columna: 1")
         self.status_bar.addPermanentWidget(self.cursor_position_label)
-        self.status_bar.showMessage("Ready")
+        self.status_bar.showMessage("Listo")
 
     def _connect_signals(self):
         """Connects signals from widgets to main window slots."""
@@ -141,7 +157,7 @@ class MainWindow(QMainWindow):
         # Only mark as modified if not ignoring text changes
         self.editor_widget.textChanged.connect(self._on_text_changed)
         
-        self.compiler_runner.compilation_started.connect(lambda: self.status_bar.showMessage("Compiling..."))
+        self.compiler_runner.compilation_started.connect(lambda: self.status_bar.showMessage("Compilando..."))
         self.compiler_runner.compilation_finished.connect(self._handle_compilation_finished)
         self.compiler_runner.compilation_error.connect(self._handle_compilation_error)
     
@@ -153,7 +169,7 @@ class MainWindow(QMainWindow):
     def _update_status_bar(self):
         line = self.editor_widget.get_current_line_number()
         col = self.editor_widget.get_current_column_number()
-        self.cursor_position_label.setText(f"Line: {line}, Column: {col}")
+        self.cursor_position_label.setText(f"Línea: {line}, Columna: {col}")
 
     def _new_file(self):
         if self._prompt_to_save():
@@ -161,7 +177,7 @@ class MainWindow(QMainWindow):
             self.editor_widget.clear()
             self.file_manager.new_file()
             self.ignore_text_changes = False
-            self.setWindowTitle("Liga de los Compiladores - Untitled")
+            self.setWindowTitle("Liga de los Compiladores - Sin título")
 
     def _close_file(self):
         if not self._prompt_to_save():
@@ -172,13 +188,13 @@ class MainWindow(QMainWindow):
         self.output_tabs.clear_all()
         self.file_manager.new_file()
         self.ignore_text_changes = False
-        self.setWindowTitle("Liga de los Compiladores - Untitled")
-        self.status_bar.showMessage("File closed", 3000)
+        self.setWindowTitle("Liga de los Compiladores - Sin título")
+        self.status_bar.showMessage("Archivo cerrado", 3000)
 
     def _open_file(self):
         if not self._prompt_to_save():
             return
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open File", filter="All Files (*);;Text Files (*.txt)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Abrir archivo", filter="Todos los archivos (*);;Archivos de texto (*.txt)")
         if file_path:
             self._open_file_from_path(file_path)
 
@@ -191,7 +207,7 @@ class MainWindow(QMainWindow):
             self.file_tree.set_root_path(str(Path(file_path).parent))
             self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open file: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo: {e}")
 
     def _save_file(self) -> bool:
         if not self.file_manager.get_current_file():
@@ -199,30 +215,30 @@ class MainWindow(QMainWindow):
         
         content = self.editor_widget.get_text()
         if self.file_manager.save_file(content):
-            self.status_bar.showMessage(f"File saved.", 3000)
+            self.status_bar.showMessage("Archivo guardado.", 3000)
             self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}")
             return True
-        QMessageBox.critical(self, "Error", "Could not save file.")
+        QMessageBox.critical(self, "Error", "No se pudo guardar el archivo.")
         return False
 
     def _save_file_as(self) -> bool:
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save File As", filter="All Files (*);;Text Files (*.txt)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Guardar archivo como", filter="Todos los archivos (*);;Archivos de texto (*.txt)")
         if file_path:
             content = self.editor_widget.get_text()
             if self.file_manager.save_file_as(content, file_path):
                 self.file_tree.set_root_path(str(Path(file_path).parent))
                 self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}")
-                self.status_bar.showMessage(f"File saved as {file_path}", 3000)
+                self.status_bar.showMessage(f"Archivo guardado como {file_path}", 3000)
                 return True
-            QMessageBox.critical(self, "Error", f"Could not save file to {file_path}.")
+            QMessageBox.critical(self, "Error", f"No se pudo guardar el archivo en {file_path}.")
         return False
 
     def _prompt_to_save(self) -> bool:
         if not self.file_manager.is_modified:
             return True
         
-        reply = QMessageBox.question(self, "Unsaved Changes",
-                                     "You have unsaved changes. Do you want to save them?",
+        reply = QMessageBox.question(self, "Cambios sin guardar",
+                         "Tienes cambios sin guardar. ¿Deseas guardarlos?",
                                      QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
         
         if reply == QMessageBox.StandardButton.Save:
@@ -237,30 +253,30 @@ class MainWindow(QMainWindow):
                 return
         
         if not self.file_manager.get_current_file():
-             QMessageBox.warning(self, "No File", "Please open or save a file before compiling.")
+             QMessageBox.warning(self, "Sin archivo", "Abre o guarda un archivo antes de compilar.")
              return
 
         self.output_tabs.clear_all()
         phase_func(str(self.file_manager.get_current_file()))
 
     def _handle_compilation_finished(self, results: dict):
-        self.status_bar.showMessage("Compilation finished successfully.", 5000)
+        self.status_bar.showMessage("Compilación finalizada correctamente.", 5000)
         self.output_tabs.update_tokens(results.get("tokens", ""))
         self.output_tabs.update_ast(results.get("ast", ""))
         self.output_tabs.update_semantic(results.get("semantic", ""))
         self.output_tabs.update_intermediate_code(results.get("intermediate", ""))
         self.output_tabs.update_symbol_table(results.get("symbols", ""))
-        self.output_tabs.update_errors(results.get("errors", "# No errors"))
+        self.output_tabs.update_errors(results.get("errors", "# Sin errores"))
         self.output_tabs.update_execution(results.get("execution", ""))
 
     def _handle_compilation_error(self, error_msg: str):
-        self.status_bar.showMessage("Compilation failed.", 5000)
-        self.output_tabs.update_errors(f"COMPILER ERROR:\n{error_msg}")
+        self.status_bar.showMessage("La compilación falló.", 5000)
+        self.output_tabs.update_errors(f"ERROR DEL COMPILADOR:\n{error_msg}")
         self.output_tabs.setCurrentWidget(self.output_tabs.tabs["errores"])
 
     def _create_theme_menu(self):
         """Creates a View menu with theme options."""
-        view_menu = self.menuBar().addMenu("&View")
+        view_menu = self.menuBar().addMenu("&Vista")
         theme_group = QActionGroup(self)
         theme_group.setExclusive(True)
         

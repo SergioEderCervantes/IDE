@@ -1,7 +1,7 @@
 # src/utils/constants.py
 OUTPUT_TAB_NAMES = [
     "Tokens",
-    "AST",
+    "Sintáctico",
     "Semántico",
     "Código Intermedio",
     "Tabla de Símbolos",
