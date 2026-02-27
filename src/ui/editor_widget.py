@@ -4,36 +4,33 @@ from PyQt6.QtWidgets import QWidget
 
 class EditorWidget(QsciScintilla):
     """
-    A custom code editor widget based on QScintilla
-    with line numbers, basic styling and dynamic theming.
+    Un widget de editor de código personalizado basado en QScintilla.
     """
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: QWidget = None): # type: ignore
         super().__init__(parent)
         
-        # Basic setup
+        # Configuración básica
+        # TODO: que se pueda cambiar el tama;o de fuente
         self.setUtf8(True)
-        font = QFont("Courier New", 10)
+        font = QFont("Courier New", 14)
         self.setFont(font)
         
-        # Line numbers
+        # Números de línea
         self.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
         self.setMarginWidth(0, "0000")
         
-        # Other settings
+        # Otras configuraciones
         self.setIndentationGuides(True)
         self.setTabWidth(4)
         self.setIndentationsUseTabs(False)
         self.setAutoIndent(True)
-        
-        # For a better look
         self.setCaretLineVisible(True)
         
-        # Apply default dark theme
+        # Aplicar tema oscuro por defecto
         self.set_theme('dark_purple.xml')
 
     def set_theme(self, theme_id: str):
-        """Apply theme colors to the editor."""
-        # Define theme color schemes: (bg, text, margin_bg, margin_fg, caret_bg)
+        """Aplicar colores de tema al editor."""
         themes = {
             'dark_purple.xml': {
                 'bg': '#1e1e2e',
@@ -74,7 +71,6 @@ class EditorWidget(QsciScintilla):
         
         colors = themes.get(theme_id, themes['dark_purple.xml'])
         
-        # Apply colors
         self.setMarginsBackgroundColor(QColor(colors['margin_bg']))
         self.setMarginsForegroundColor(QColor(colors['margin_fg']))
         self.setPaper(QColor(colors['bg']))
@@ -82,19 +78,21 @@ class EditorWidget(QsciScintilla):
         self.setCaretLineBackgroundColor(QColor(colors['caret_bg']))
 
     def get_text(self) -> str:
-        """Returns the entire text content of the editor."""
+        """Retorna todo el contenido de texto del editor."""
         return self.text()
     
     def set_text(self, text: str):
-        """Sets the text content of the editor."""
+        """Establece el contenido de texto del editor."""
         self.setText(text)
     
+
+    # TODO: Una sola funcion que retorne las dos cosas
     def get_current_line_number(self) -> int:
-        """Returns the current line number (1-indexed)."""
+        """Retorna el número de línea actual (base 1)."""
         line, _ = self.getCursorPosition()
         return line + 1
     
     def get_current_column_number(self) -> int:
-        """Returns the current column number (1-indexed)."""
+        """Retorna el número de columna actual (base 1)."""
         _, col = self.getCursorPosition()
         return col + 1

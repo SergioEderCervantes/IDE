@@ -2,33 +2,33 @@ from pathlib import Path
 from typing import Optional
 
 class FileManager:
-    """Manages file operations like opening, saving, and tracking file state."""
+    """Gestiona operaciones de archivo como abrir, guardar y rastrear el estado del archivo."""
 
     def __init__(self):
         self.current_file: Optional[Path] = None
         self.is_modified: bool = False
 
     def new_file(self) -> None:
-        """Resets the current file state to represent a new, unsaved file."""
+        """Reinicia el estado del archivo actual para representar un archivo nuevo sin guardar."""
         self.current_file = None
         self.is_modified = False
 
     def open_file(self, filepath: str) -> str:
         """
-        Opens a file, reads its content, and sets it as the current file.
+        Abre un archivo, lee su contenido y lo establece como archivo actual.
 
         Args:
-            filepath: The path to the file to open.
+            filepath: La ruta del archivo a abrir.
 
         Returns:
-            The content of the file.
+            El contenido del archivo.
         
         Raises:
-            FileNotFoundError: If the file does not exist.
+            FileNotFoundError: Si el archivo no existe.
         """
         path = Path(filepath)
         if not path.is_file():
-            raise FileNotFoundError(f"File not found: {filepath}")
+            raise FileNotFoundError(f"Archivo no encontrado: {filepath}")
 
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -39,15 +39,15 @@ class FileManager:
 
     def save_file(self, content: str) -> bool:
         """
-        Saves the content to the current file.
+        Guarda el contenido en el archivo actual.
         
-        It will fail if no file is currently open (i.e., `current_file` is None).
+        Fallará si no hay un archivo abierto (es decir, `current_file` es None).
 
         Args:
-            content: The text content to save.
+            content: El contenido de texto a guardar.
 
         Returns:
-            True if the file was saved successfully, False otherwise.
+            True si el archivo se guardó exitosamente, False en caso contrario.
         """
         if not self.current_file:
             return False
@@ -62,14 +62,14 @@ class FileManager:
 
     def save_file_as(self, content: str, filepath: str) -> bool:
         """
-        Saves the content to a new file location and sets it as the current file.
+        Guarda el contenido en una nueva ubicación de archivo y lo establece como archivo actual.
 
         Args:
-            content: The text content to save.
-            filepath: The new path for the file.
+            content: El contenido de texto a guardar.
+            filepath: La nueva ruta del archivo.
 
         Returns:
-            True if the file was saved successfully, False otherwise.
+            True si el archivo se guardó exitosamente, False en caso contrario.
         """
         try:
             path = Path(filepath)
@@ -83,10 +83,9 @@ class FileManager:
             return False
 
     def get_current_file(self) -> Optional[Path]:
-        """Returns the Path object of the current file."""
+        """Devuelve el objeto Path del archivo actual."""
         return self.current_file
 
     def mark_modified(self, modified: bool = True) -> None:
-        """Marks the current file as modified."""
+        """Marca el archivo actual como modificado."""
         self.is_modified = modified
-

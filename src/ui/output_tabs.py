@@ -2,15 +2,15 @@ from PyQt6.QtWidgets import QTabWidget, QTextEdit, QWidget
 from src.utils.constants import OUTPUT_TAB_NAMES
 
 class OutputTabs(QTabWidget):
-    """A widget with multiple tabs to display compiler output."""
+    """Un widget con múltiples pestañas para mostrar la salida del compilador."""
 
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: QWidget = None): # type: ignore
         super().__init__(parent)
         self.tabs = {}
         self._create_tabs()
 
     def _create_tabs(self):
-        """Creates a tab for each name in OUTPUT_TAB_NAMES."""
+        """Crea una pestaña para cada nombre en OUTPUT_TAB_NAMES."""
         for name in OUTPUT_TAB_NAMES:
             text_edit = QTextEdit()
             text_edit.setReadOnly(True)
@@ -40,6 +40,6 @@ class OutputTabs(QTabWidget):
         self.tabs["ejecución"].setText(content)
 
     def clear_all(self):
-        """Clears the text from all tabs."""
+        """Limpia el texto de todas las pestañas."""
         for text_edit in self.tabs.values():
             text_edit.clear()
