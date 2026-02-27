@@ -260,13 +260,13 @@ class MainWindow(QMainWindow):
 
     def _handle_compilation_finished(self, results: dict):
         self.status_bar.showMessage("Compilación finalizada correctamente.", 5000)
-        self.output_tabs.update_tokens(results.get("tokens", ""))
-        self.output_tabs.update_ast(results.get("ast", ""))
-        self.output_tabs.update_semantic(results.get("semantic", ""))
-        self.output_tabs.update_intermediate_code(results.get("intermediate", ""))
-        self.output_tabs.update_symbol_table(results.get("symbols", ""))
-        self.output_tabs.update_errors(results.get("errors", "# Sin errores"))
-        self.output_tabs.update_execution(results.get("execution", ""))
+        self.output_tabs.update_tokens(results.get("lexico", ""))
+        self.output_tabs.update_ast(results.get("sintactico", ""))
+        self.output_tabs.update_semantic(results.get("semantico", ""))
+        self.output_tabs.update_intermediate_code(results.get("codigo_intermedio", ""))
+        self.output_tabs.update_symbol_table(results.get("tabla_simbolos", ""))
+        self.output_tabs.update_errors(results.get("errores", "# Sin errores"))
+        self.output_tabs.update_execution(results.get("ejecucion", ""))
 
     def _handle_compilation_error(self, error_msg: str):
         self.status_bar.showMessage("La compilación falló.", 5000)
