@@ -23,7 +23,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, app=None):
         super().__init__()
-        self.setWindowTitle("Liga de los Compiladores - Sin título")
+        self.setWindowTitle("ArcaneIDE - Sin título")
         self.setGeometry(100, 100, 1200, 800)
         
         # Cargar e establecer el icono de la ventana
@@ -80,8 +80,13 @@ class MainWindow(QMainWindow):
         self.close_file_action = QAction(qta.icon('fa6s.xmark', color='white'), "&Cerrar", self, shortcut=QKeySequence.StandardKey.Close, triggered=self._close_file) # type: ignore
         self.exit_action = QAction(qta.icon('fa6s.door-open', color='white'), "Sa&lir", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close) # type: ignore
 
+        # Acciones de zoom
+        self.zoom_in_action = QAction(qta.icon('fa6s.magnifying-glass-plus', color='white'), "Aumentar Zoom", self, shortcut="Ctrl++", triggered=self.editor_widget.zoomIn) # type: ignore
+        self.zoom_out_action = QAction(qta.icon('fa6s.magnifying-glass-minus', color='white'), "Reducir Zoom", self, shortcut="Ctrl+-", triggered=self.editor_widget.zoomOut) # type: ignore
+        self.reset_zoom_action = QAction(qta.icon('fa6s.magnifying-glass', color='white'), "Restablecer Zoom", self, shortcut="Ctrl+0", triggered=lambda: self.editor_widget.zoomTo(0)) # type: ignore
+
         # Almacenar referencias de acciones de archivo para actualizar colores de iconos
-        self.file_actions = [self.new_action, self.open_action, self.save_action, self.save_as_action, self.close_file_action, self.exit_action]
+        self.file_actions = [self.new_action, self.open_action, self.save_action, self.save_as_action, self.close_file_action, self.exit_action, self.zoom_in_action, self.zoom_out_action, self.reset_zoom_action]
 
         # Acciones de fases del compilador con iconos de QtAwesome
         self.lexical_action = QAction(qta.icon('fa6s.code', color='#61dafb'), "Análisis léxico", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis)) # type: ignore
@@ -176,7 +181,7 @@ class MainWindow(QMainWindow):
             self.editor_widget.clear()
             self.file_manager.new_file()
             self.ignore_text_changes = False
-            self.setWindowTitle("Liga de los Compiladores - Sin título")
+            self.setWindowTitle("ArcaneIDE - Sin título")
 
     def _close_file(self):
         if not self._prompt_to_save():
@@ -187,7 +192,7 @@ class MainWindow(QMainWindow):
         self.output_tabs.clear_all()
         self.file_manager.new_file()
         self.ignore_text_changes = False
-        self.setWindowTitle("Liga de los Compiladores - Sin título")
+        self.setWindowTitle("ArcaneIDE - Sin título")
         self.status_bar.showMessage("Archivo cerrado", 3000)
 
     def _open_file(self):
@@ -204,7 +209,7 @@ class MainWindow(QMainWindow):
             self.editor_widget.set_text(content)
             self.ignore_text_changes = False
             self.file_tree.set_root_path(str(Path(file_path).parent))
-            self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}") # type: ignore
+            self.setWindowTitle(f"ArcaneIDE - {self.file_manager.get_current_file().name}") # type: ignore
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo: {e}")
 
@@ -215,7 +220,7 @@ class MainWindow(QMainWindow):
         content = self.editor_widget.get_text()
         if self.file_manager.save_file(content):
             self.status_bar.showMessage("Archivo guardado.", 3000)
-            self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}") # type: ignore
+            self.setWindowTitle(f"ArcaneIDE - {self.file_manager.get_current_file().name}") # type: ignore
             return True
         QMessageBox.critical(self, "Error", "No se pudo guardar el archivo.")
         return False
@@ -226,7 +231,7 @@ class MainWindow(QMainWindow):
             content = self.editor_widget.get_text()
             if self.file_manager.save_file_as(content, file_path):
                 self.file_tree.set_root_path(str(Path(file_path).parent))
-                self.setWindowTitle(f"Liga de los Compiladores - {self.file_manager.get_current_file().name}") # type: ignore
+                self.setWindowTitle(f"ArcaneIDE - {self.file_manager.get_current_file().name}") # type: ignore
                 self.status_bar.showMessage(f"Archivo guardado como {file_path}", 3000)
                 return True
             QMessageBox.critical(self, "Error", f"No se pudo guardar el archivo en {file_path}.")
@@ -274,8 +279,11 @@ class MainWindow(QMainWindow):
         self.output_tabs.setCurrentWidget(self.output_tabs.tabs["errores"])
 
     def _create_theme_menu(self):
-        """Crea un menú Vista con opciones de tema."""
+        """Crea un menú Vista con opciones de tema y zoom."""
         view_menu = self.menuBar().addMenu("&Vista") # type: ignore
+        
+        # Submenú de temas
+        theme_menu = view_menu.addMenu("&Temas") # type:ignore
         theme_group = QActionGroup(self)
         theme_group.setExclusive(True)
         
@@ -285,7 +293,12 @@ class MainWindow(QMainWindow):
                 theme_action.setChecked(True)
             theme_action.triggered.connect(lambda checked, t=theme_id: self._apply_theme(t))
             theme_group.addAction(theme_action)
-            view_menu.addAction(theme_action) # type: ignore
+            theme_menu.addAction(theme_action) # type: ignore
+            
+        view_menu.addSeparator() # type:ignore
+        view_menu.addAction(self.zoom_in_action) # type:ignore
+        view_menu.addAction(self.zoom_out_action) # type:ignore
+        view_menu.addAction(self.reset_zoom_action) # type:ignore
     
     def _update_icon_colors(self, is_light: bool):
         """Actualiza colores de iconos según el brillo del tema."""
@@ -297,6 +310,9 @@ class MainWindow(QMainWindow):
             (self.save_as_action, 'fa6s.file-export'),
             (self.close_file_action, 'fa6s.xmark'),
             (self.exit_action, 'fa6s.door-open'),
+            (self.zoom_in_action, 'fa6s.magnifying-glass-plus'),
+            (self.zoom_out_action, 'fa6s.magnifying-glass-minus'),
+            (self.reset_zoom_action, 'fa6s.magnifying-glass'),
         ]
         
         for action, icon_name in icons_config:
