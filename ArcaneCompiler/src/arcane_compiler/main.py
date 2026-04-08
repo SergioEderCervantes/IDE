@@ -7,6 +7,9 @@ VALID_PHASES = {"lexical", "syntactic", "semantic", "intermediate", "execution",
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     if len(sys.argv) < 3:
         print("Uso: arcane-compiler <archivo> <fase>", file=sys.stderr)
         sys.exit(1)
