@@ -1,6 +1,7 @@
 import re
 import sys
 import locale
+from pathlib import Path
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
@@ -41,7 +42,8 @@ class CompilerRunner(QObject):
         self._output_buffer = ""
         self._error_buffer = ""
         
-        self.process.start(sys.executable, ["compiler/compiler.py", source_file, phase])
+        _compiler_bin = Path(sys.executable).parent / "arcane-compiler"
+        self.process.start(str(_compiler_bin), [source_file, phase])
 
     def _handle_stdout(self):
         """Maneja el buffer de output normal"""

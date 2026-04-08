@@ -1,69 +1,164 @@
-# Compiler IDE
+# ArcaneIDE + ArcaneCompiler
 
-A simple, lightweight IDE for developing and testing compilers, built with Python and PyQt6.
+A monorepo containing a PyQt6-based IDE and a from-scratch compiler for a C-like language. Both packages share a single virtual environment.
 
-This project provides a basic but functional Integrated Development Environment (IDE) featuring a code editor with syntax highlighting, a file system explorer, and an interface to run a compiler and visualize its output through various stages.
+---
 
-## Features
+## Monorepo layout
 
-- **Code Editor**: A professional code editor based on QScintilla with features like:
-  - Line numbering
-  - Syntax highlighting (currently generic, can be extended)
-  - Auto-indentation
-- **File System Explorer**: A tree view to browse and open files from the project directory.
-- **Compiler Integration**: A simple interface to run an external compiler script.
-  - Toolbar buttons and shortcuts (F5-F9) to trigger different compilation phases.
-- **Tabbed Output**: View the output of each compilation phase in separate tabs:
-  - Tokens, AST, Semantic Analysis, Intermediate Code, Symbol Table, Errors, and Execution output.
-- **File Management**: Standard file operations:
-  - New, Open, Save, Save As...
-  - Prompts for unsaved changes.
+```
+IDE/
+├── .venv/                 ← Shared virtual environment
+├── ArcaneIDE/             ← IDE application (PyQt6)
+│   ├── pyproject.toml
+│   └── src/
+│       ├── main.py
+│       ├── assets/
+│       ├── core/          ← Business logic (no UI)
+│       ├── ui/            ← Qt widgets
+│       └── utils/
+└── ArcaneCompiler/        ← Compiler package
+    ├── pyproject.toml
+    ├── src/
+    │   └── arcane_compiler/
+    │       ├── main.py        ← CLI entry point
+    │       ├── lexer/         ← Lexical analysis (DFA)
+    │       └── utils/         ← Output protocol helpers
+    └── tests/
+        ├── samples/       ← .c source files for testing
+        └── test_lexer.py
+```
 
-## Setup and Installation
+---
 
-This project is built using Python and PyQt6.
+## Setup
 
-### 1. Prerequisites
-- Python 3.10 or higher
-- `pip` for installing packages
-
-### 2. Environment Setup
-
-It is highly recommended to use a virtual environment.
+> Run all commands from the repo root (`IDE/`).
 
 ```bash
-# Create a virtual environment
+# 1. Create the shared virtual environment (only once)
 python3 -m venv .venv
 
-# Activate the virtual environment
-# On Linux/macOS:
-source .venv/bin/activate
-# On Windows:
-# .venv\\Scripts\\activate
+# 2. Activate it
+source .venv/bin/activate   # Linux / macOS
+# .venv\Scripts\activate    # Windows
+
+# 3. Install the IDE
+pip install -e "ArcaneIDE/"
+
+# 4. Install the compiler (+ dev dependencies for tests)
+pip install -e "ArcaneCompiler/[dev]"
 ```
 
-### 3. Install Dependencies
+---
 
-Install the required packages from `requirements.txt`:
-
-```bash
-pip install -r requirements.txt
-```
-
-## How to Run
-
-Once the dependencies are installed and the virtual environment is active, run the application with the following command from the project's root directory:
+## Running the IDE
 
 ```bash
+# From the repo root, with the venv active:
+cd ArcaneIDE
 python -m src.main
 ```
 
-The IDE window should appear.
+The IDE window appears. Open any `.c` file with the file explorer on the left, then use the toolbar or function keys to trigger compilation phases. Results appear in the tabbed panel at the bottom right.
 
-## How to Use
+| Key | Action |
+|-----|--------|
+| F5  | Lexical analysis |
+| F6  | Syntactic analysis |
+| F7  | Semantic analysis |
+| F8  | Intermediate code generation |
+| F9  | Execution |
 
-1.  Use the file explorer on the left to navigate and double-click a file to open it in the editor.
-2.  Use the "File" menu or the toolbar icons (Ctrl+N, Ctrl+O, Ctrl+S) to manage files.
-3.  Write your code in the editor.
-4.  Use the "Compile" menu, the toolbar icons, or the function keys (F5-F9) to run the compiler on the currently active file.
-5.  The results of the compilation will appear in the tabs at the bottom right.
+---
+
+## Using the compiler standalone (without the IDE)
+
+The compiler is installed as the `arcane-compiler` command inside the shared `.venv`.
+
+### Syntax
+
+```
+arcane-compiler <source_file> <phase>
+```
+
+Valid phases: `lexical`, `syntactic`, `semantic`, `intermediate`, `execution`, `all`.
+
+### Examples
+
+```bash
+# Activate the venv first
+source .venv/bin/activate
+
+# Run lexical analysis on a source file
+arcane-compiler ArcaneCompiler/tests/samples/valid_full.c lexical
+
+# Run all phases at once
+arcane-compiler my_program.c all
+
+# Pipe the token table to a file
+arcane-compiler my_program.c lexical > output.txt
+```
+
+### Output format
+
+Every phase writes to stdout using this protocol — one section per compiler stage:
+
+```
+===LEXICO===
+LÍNEA  COL   TIPO                      VALOR
+-----  ---   ----                      -----
+1      1     KW_INT                    'int'
+...
+===END_LEXICO===
+===ERRORES===
+Error léxico en línea 3, columna 7: Carácter inválido: '@'
+===END_ERRORES===
+```
+
+The IDE reads this same stdout and distributes each section to its corresponding output tab.
+
+### Phases currently implemented
+
+| Phase flag | Status | Output section(s) |
+|------------|--------|-------------------|
+| `lexical`  | Implemented | `LEXICO`, `ERRORES` |
+| `syntactic` | Pending | `SINTACTICO` |
+| `semantic`  | Pending | `SEMANTICO` |
+| `intermediate` | Pending | `CODIGO_INTERMEDIO`, `TABLA_SIMBOLOS` |
+| `execution` | Pending | `EJECUCION` |
+| `all` | Partial | All sections (lexical complete) |
+
+---
+
+## Running tests
+
+```bash
+# From the repo root, with the venv active:
+.venv/bin/pytest ArcaneCompiler/tests/ -v
+```
+
+---
+
+## Features
+
+- **Code editor** — QScintilla with line numbers, syntax highlighting, auto-indent.
+- **File explorer** — tree view, double-click to open.
+- **5 compilation phases** — triggered from toolbar or F5–F9.
+- **7 output tabs** — Tokens, Sintáctico, Semántico, Código Intermedio, Tabla de Símbolos, Errores, Ejecución.
+- **Themes** — 5 built-in themes including Tokyo Night.
+- **File management** — New, Open, Save, Save As, unsaved-changes prompt.
+- **Standalone compiler CLI** — `arcane-compiler` works independently of the IDE.
+
+---
+
+## Language supported
+
+The compiler targets a C-like teaching language with:
+
+- Types: `int`, `float`
+- Control flow: `if`/`else`, `while`, `do`/`while`, `switch`/`case`/`end`
+- I/O: `cin >>`, `cout <<`
+- Operators: arithmetic (`+ - * / % ^`), relational (`< <= > >= == !=`), logical (`&& || !` / `and or not`), increment/decrement (`++ --`)
+- Literals: integers, reals, strings, characters
+- Comments: line (`//`) and block (`/* */`)
