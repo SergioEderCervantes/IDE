@@ -101,6 +101,8 @@ class EditorWidget(QsciScintilla):
         self.setMarginsBackgroundColor(QColor(colors['margin_bg']))
         self.setMarginsForegroundColor(QColor(colors['margin_fg']))
         self.setCaretLineBackgroundColor(QColor(colors['caret_bg']))
+        self.setCaretForegroundColor(QColor('#ffffff'))
+        
 
         # Forzar re-coloreo completo del documento
         self.recolor()
