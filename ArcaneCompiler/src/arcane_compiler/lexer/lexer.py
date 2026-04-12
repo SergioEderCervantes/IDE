@@ -181,7 +181,7 @@ class Lexer:
         return Token(token_type, buf, start_line, start_col)
 
     def _read_string(self, start_line: int, start_col: int) -> Token:
-        self._advance()  # consume opening "
+        self._advance()  # "
         buf = ""
         while self._pos < len(self._source):
             ch = self._peek()

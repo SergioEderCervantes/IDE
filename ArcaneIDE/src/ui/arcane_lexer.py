@@ -140,11 +140,19 @@ class ArcaneLexer(QsciLexerCustom):
 
         line_offsets = _build_line_offsets(full_text)
 
+        total_bytes = len(full_text.encode("utf-8"))
         current_byte_pos = 0
         for token in all_tokens:
             token_start = line_offsets[token.line - 1] + (token.column - 1)
 
+            # Skip tokens already covered by a previous spanning token
+            # (e.g. an unclosed-string ERROR that consumed to end-of-document)
+            if token_start < current_byte_pos:
+                continue
+
             token_byte_len = _token_byte_length(token, full_text, line_offsets)
+            # Clamp so we never exceed document length
+            token_byte_len = min(token_byte_len, total_bytes - token_start)
 
             if token_start > current_byte_pos:
                 gap = token_start - current_byte_pos
@@ -154,7 +162,10 @@ class ArcaneLexer(QsciLexerCustom):
             self.setStyling(token_byte_len, style)
             current_byte_pos = token_start + token_byte_len
 
-        remaining = len(full_text.encode("utf-8")) - current_byte_pos
+            if current_byte_pos >= total_bytes:
+                break
+
+        remaining = total_bytes - current_byte_pos
         if remaining > 0:
             self.setStyling(remaining, self.STYLE_DEFAULT)
 
