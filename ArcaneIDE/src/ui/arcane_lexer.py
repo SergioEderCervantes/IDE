@@ -24,7 +24,10 @@ def _token_byte_length(token, full_text: str, line_offsets: list[int]) -> int:
     """
     if token.type == TokenType.ERROR:
         if token.value.startswith("Carácter inválido:"):
-            return 1  # un solo carácter inválido
+            return 1  
+        if token.value.startswith("Número inválido:"):
+            inner = token.value.split("'")[1]
+            return len(inner.encode("utf-8"))
         # Tokens no cerrados (string, char, block comment): colorear hasta el final
         token_start = line_offsets[token.line - 1] + (token.column - 1)
         return len(full_text.encode("utf-8")) - token_start
