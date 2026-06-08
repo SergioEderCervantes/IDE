@@ -124,3 +124,41 @@ def test_ast_to_dict():
     d = ast.to_dict()
     assert d["kind"] == "programa"
     assert isinstance(d["children"], list)
+
+
+def test_ast_estructura_programa():
+    """Verifica que programa tiene exactamente los hijos esperados."""
+    ast, errors = _parse("main { int x; }")
+    assert ast.kind == "programa"
+    kinds = [c.kind for c in ast.children]
+    assert "lista_declaracion" in kinds
+    assert errors == []
+
+
+def test_programa_with_all_constructs():
+    src = """
+    main {
+        int x, y;
+        float z;
+        bool flag;
+        cin >> x;
+        cin >> y;
+        z = x + y * 2;
+        flag = true;
+        if x > y then
+            cout << "mayor";
+        else
+            cout << "menor";
+        end
+        while x > 0
+            x = x - 1;
+        end
+        do
+            y = y + 1;
+        while y < 10
+        cout << z;
+    }
+    """
+    ast, errors = _parse(src)
+    assert errors == [], f"Errores inesperados: {errors}"
+    assert ast.kind == "programa"
