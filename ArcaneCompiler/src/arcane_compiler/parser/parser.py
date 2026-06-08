@@ -34,8 +34,6 @@ _SUMA_OPS = {
 _MULT_OPS = {
     TokenType.OP_MULTIPLY, TokenType.OP_DIVIDE, TokenType.OP_MODULO,
 }
-_OP_LOGICO = {TokenType.OP_AND, TokenType.OP_OR, TokenType.OP_NOT}
-
 # Tokens de sincronización para recuperación de errores
 _SYNC_EXPRESION = {TokenType.SYM_SEMICOLON, TokenType.SYM_RPAREN, TokenType.KW_END}
 _SYNC_SENTENCIA = {
@@ -260,6 +258,9 @@ class Parser:
         elif tok.type == TokenType.KW_COUT:
             return self._parse_sent_out()
         elif tok.type == TokenType.IDENTIFIER:
+            nxt = self._peek()
+            if nxt and nxt.type in (TokenType.OP_INCREMENT, TokenType.OP_DECREMENT):
+                return self._parse_incremento()
             return self._parse_asignacion()
         else:
             self._errors.append(
@@ -268,6 +269,19 @@ class Parser:
             )
             self._sync_to(_SYNC_SENTENCIA)
             return None
+
+    def _parse_incremento(self) -> ASTNode:
+        node = ASTNode(kind="incremento")
+        tok = self._current()
+        if tok:
+            node.line, node.col = tok.line, tok.column
+        id_tok = self._expect(TokenType.IDENTIFIER, "se esperaba identificador")
+        if id_tok:
+            node.add(self._make_token_node(id_tok))
+        if self._current_is(TokenType.OP_INCREMENT, TokenType.OP_DECREMENT):
+            node.add(self._make_token_node(self._advance()))
+        self._expect(TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        return node
 
     def _parse_asignacion(self) -> ASTNode:
         node = ASTNode(kind="asignacion")
@@ -440,7 +454,26 @@ class Parser:
         return node
 
     def _parse_expresion(self) -> ASTNode:
+        """expresion → comparacion [('&&' | '||') comparacion]*"""
         node = ASTNode(kind="expresion")
+        tok = self._current()
+        if tok:
+            node.line, node.col = tok.line, tok.column
+
+        left = self._parse_comparacion()
+        node.add(left)
+
+        while self._current_is(TokenType.OP_AND, TokenType.OP_OR):
+            op_tok = self._advance()
+            node.add(self._make_token_node(op_tok))
+            right = self._parse_comparacion()
+            node.add(right)
+
+        return node
+
+    def _parse_comparacion(self) -> ASTNode:
+        """comparacion → expresion_simple [rel_op expresion_simple]"""
+        node = ASTNode(kind="comparacion")
         tok = self._current()
         if tok:
             node.line, node.col = tok.line, tok.column
@@ -514,13 +547,11 @@ class Parser:
             self._errors.append("Error sintáctico: fin de archivo inesperado en expresión")
             raise ParseError("EOF in componente")
 
-        # op_logico componente  (prefijo unario)
-        if tok.type in _OP_LOGICO:
-            node = ASTNode(kind="componente_logico", line=tok.line, col=tok.column)
-            op_tok = self._advance()
-            node.add(self._make_token_node(op_tok))
-            inner = self._parse_componente()
-            node.add(inner)
+        # ! componente  (negación unaria)
+        if tok.type == TokenType.OP_NOT:
+            node = ASTNode(kind="componente_not", line=tok.line, col=tok.column)
+            node.add(self._make_token_node(self._advance()))
+            node.add(self._parse_componente())
             return node
 
         # ( expresion )

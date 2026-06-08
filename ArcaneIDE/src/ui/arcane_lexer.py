@@ -67,6 +67,7 @@ class ArcaneLexer(QsciLexerCustom):
         TokenType.KW_MAIN:        STYLE_KEYWORD,
         TokenType.KW_CIN:         STYLE_KEYWORD,
         TokenType.KW_COUT:        STYLE_KEYWORD,
+        TokenType.KW_THEN:        STYLE_KEYWORD,
         TokenType.OP_PLUS:        STYLE_OP_ARITH,
         TokenType.OP_MINUS:       STYLE_OP_ARITH,
         TokenType.OP_MULTIPLY:    STYLE_OP_ARITH,

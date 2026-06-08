@@ -11,10 +11,10 @@ main {
     y = 5 + 3 - 2 * 4 / 7 - 9;
     z = 8 / 2 + 15 * 4;
     y = 14.54;
-    if a != 7 then
+    if (2 > 3) then
         y = a + 3;
     else
-        if 4 > 2 then
+        if (4 > 2 && y > 0) then
             b = 3.2;
         else
             b = 5.0;
@@ -22,15 +22,15 @@ main {
         y = y + 1;
     end
     a = a + 1;
-    c = c - 1;
+    c--;
     x = 3 + 4;
     do
         y = (y + 1) * 2 + 1;
         x = 6 + 8 / 9 * 8 / 3;
         cin >> x;
         mas = 36 / 7;
-    while y == 5
-    while y == 0
+    while (y == 5)
+    while (y == 0)
         cin >> mas;
         cout << x + 98 - 62;
     end
