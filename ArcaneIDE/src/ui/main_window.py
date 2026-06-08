@@ -164,6 +164,7 @@ class MainWindow(QMainWindow):
         self.compiler_runner.compilation_started.connect(lambda: self.status_bar.showMessage("Compilando..."))
         self.compiler_runner.compilation_finished.connect(self._handle_compilation_finished)
         self.compiler_runner.compilation_error.connect(self._handle_compilation_error)
+        self.compiler_runner.ast_ready.connect(self._on_ast_ready)
     
     def _on_text_changed(self):
         """Maneja cambios de texto, respetando la bandera de ignorar."""
@@ -277,6 +278,11 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("La compilación falló.", 5000)
         self.output_tabs.update_errors(f"ERROR DEL COMPILADOR:\n{error_msg}")
         self.output_tabs.setCurrentWidget(self.output_tabs.tabs["errores"])
+
+    def _on_ast_ready(self, ast_dict: dict) -> None:
+        self.ignore_text_changes = True
+        self.output_tabs.set_ast(ast_dict)
+        self.ignore_text_changes = False
 
     def _create_theme_menu(self):
         """Crea un menú Vista con opciones de tema y zoom."""

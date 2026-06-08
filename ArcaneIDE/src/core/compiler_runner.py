@@ -1,5 +1,6 @@
 import re
 import sys
+import json as _json
 import locale
 from pathlib import Path
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
@@ -12,8 +13,9 @@ class CompilerRunner(QObject):
     Output de compilacion de error: String de error
     """
     compilation_started = pyqtSignal()
-    compilation_finished = pyqtSignal(dict) 
+    compilation_finished = pyqtSignal(dict)
     compilation_error = pyqtSignal(str)
+    ast_ready = pyqtSignal(dict)
 
     def __init__(self, parent=None):
         """Inicializacion de atributos"""
@@ -76,7 +78,15 @@ class CompilerRunner(QObject):
             name = match.group('name').lower()
             content = match.group('content').strip()
             results[name] = content
-            
+
+        if "sintactico" in results:
+            try:
+                data = _json.loads(results["sintactico"])
+                if data.get("success") and data.get("ast"):
+                    self.ast_ready.emit(data["ast"])
+            except (ValueError, KeyError):
+                pass
+
         return results
 
     # Metodos publicos para iniciar la compilacion por fases
