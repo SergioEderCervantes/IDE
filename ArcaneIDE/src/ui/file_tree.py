@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QTreeView, QWidget, QVBoxLayout, QFileIconProvider
 from PyQt6.QtGui import QFileSystemModel
 from PyQt6.QtCore import QDir, pyqtSignal, QStandardPaths, Qt
 import qtawesome as qta
+from pathlib import Path
 
 
 class CustomFileIconProvider(QFileIconProvider):
@@ -52,9 +53,13 @@ class FileTree(QWidget):
         self.model = QFileSystemModel()
         self.icon_provider = CustomFileIconProvider()
         self.model.setIconProvider(self.icon_provider)
-        initial_root = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
-        if not initial_root:
-            initial_root = QDir.homePath()
+        _samples = Path(__file__).parents[3] / "ArcaneCompiler" / "tests" / "samples"
+        if _samples.exists():
+            initial_root = str(_samples)
+        else:
+            _desktop = Path(QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.DesktopLocation))
+            initial_root = str(_desktop) if _desktop.exists() else QDir.homePath()
         self.model.setRootPath(initial_root)
         
         # Filtros
@@ -64,7 +69,7 @@ class FileTree(QWidget):
         # Vista de árbol
         self.tree = QTreeView()
         self.tree.setModel(self.model)
-        self.tree.setRootIndex(self.model.index(initial_root))
+        self.tree.setRootIndex(self.model.index(str(initial_root)))
         
         # Configuración visual
         self.tree.setColumnWidth(0, 250)

@@ -1,41 +1,26 @@
-/* Programa de prueba completo */
-// Comentario de linea
-int main() {
-    int x = 10;
-    float y = 3.14;
-    int contador = 0;
-
-    if (x > 5) {
-        contador++;
-        cout << "mayor";
-    } else {
-        contador--;
-    }
-
-    while (x != 0) {
+main {
+    int x, y, z;
+    float a, b;
+    x = 10;
+    y = 5;
+    z = 0;
+    a = 3.14;
+    b = 0;
+    if x > 5 then
+        y = x + 1;
+        z = y * 2;
+    else
+        y = 0;
+        z = 1;
+    end
+    while x != 0
         x = x - 1;
-        y = y * 2.0;
-    }
-
-    switch (contador) {
-        case 1:
-            x = x + 1;
-        end
-    }
-
-    int a = x % 3;
-    int b = x ^ 2;
-
-    if (x >= 0 && y <= 10.0) {
-        cout << "ok";
-    }
-
-    if (x == 0 || y != 1.0) {
-        cin >> x;
-    }
-
-    char c = 'A';
-    do {
-        x = x + 1;
-    } while (x < 10);
+        b = b + a;
+    end
+    do
+        z = z + 1;
+    while z < 10
+    cin >> x;
+    cout << "resultado: ";
+    cout << x + y;
 }
