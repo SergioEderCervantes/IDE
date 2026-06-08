@@ -22,6 +22,10 @@ class TokenType(Enum):
     KW_MAIN = auto()
     KW_CIN = auto()
     KW_COUT = auto()
+    KW_THEN = auto()
+    KW_BOOL = auto()
+    KW_TRUE = auto()
+    KW_FALSE = auto()
 
     # Comentarios
     COMMENT_LINE = auto()
