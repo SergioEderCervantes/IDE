@@ -5,7 +5,6 @@ from ..lexer.token_type import TokenType
 from .ast_nodes import ASTNode
 
 
-# Tokens que nunca forman parte de la gramática (ignorar silenciosamente)
 _SKIP_TYPES = {TokenType.COMMENT_LINE, TokenType.COMMENT_BLOCK}
 
 # FIRST sets para decisiones de bifurcación
@@ -50,7 +49,6 @@ class ParseError(Exception):
 
 class Parser:
     def __init__(self, tokens: list[Token]) -> None:
-        # Filtrar comentarios
         self._tokens: list[Token] = [
             t for t in tokens if t.type not in _SKIP_TYPES
         ]
@@ -87,10 +85,6 @@ class Parser:
         return tok
 
     def _expect(self, ttype: TokenType, msg: str = "") -> Optional[Token]:
-        """
-        Consume el token actual si es del tipo esperado.
-        Si no, registra error y retorna None (sin avanzar).
-        """
         tok = self._current()
         if tok is not None and tok.type == ttype:
             return self._advance()
@@ -106,8 +100,16 @@ class Parser:
         self._errors.append(full_msg)
         return None
 
+    def _expect_node(self, parent: ASTNode, ttype: TokenType, msg: str = "") -> bool:
+        """Como _expect pero agrega un nodo de error al padre si falla."""
+        tok = self._expect(ttype, msg)
+        if tok is None:
+            err_msg = self._errors[-1] if self._errors else msg
+            parent.add(ASTNode(kind="error", value=err_msg))
+            return False
+        return True
+
     def _sync_to(self, sync_set: set[TokenType]) -> None:
-        """Panic mode: avanza hasta encontrar un token de sincronización."""
         while not self._is_at_end():
             if self._current().type in sync_set:
                 return
@@ -121,10 +123,14 @@ class Parser:
             col=token.column,
         )
 
+    def _skip_optional(self, *types: TokenType) -> None:
+        """Consume el token actual si coincide con alguno de los tipos dados."""
+        if self._current_is(*types):
+            self._advance()
+
     # ─── Punto de entrada ────────────────────────────────────────────────────
 
     def parse(self) -> ASTNode:
-        """Parsea el programa completo. Retorna la raíz del AST."""
         node = self._parse_programa()
         if not self._is_at_end():
             tok = self._current()
@@ -146,12 +152,17 @@ class Parser:
         if main_tok:
             node.add(self._make_token_node(main_tok))
 
-        self._expect(TokenType.SYM_LBRACE, "se esperaba '{'")
+        # Acepta main() o main — los paréntesis son opcionales
+        if self._current_is(TokenType.SYM_LPAREN):
+            self._advance()
+            self._skip_optional(TokenType.SYM_RPAREN)
+
+        self._expect_node(node, TokenType.SYM_LBRACE, "se esperaba '{'")
 
         lista = self._parse_lista_declaracion()
         node.add(lista)
 
-        self._expect(TokenType.SYM_RBRACE, "se esperaba '}'")
+        self._expect_node(node, TokenType.SYM_RBRACE, "se esperaba '}'")
         return node
 
     def _parse_lista_declaracion(self) -> ASTNode:
@@ -177,10 +188,11 @@ class Parser:
         else:
             tok = self._current()
             if tok:
-                self._errors.append(
+                msg = (
                     f"Error sintáctico en línea {tok.line}, col {tok.column}: "
                     f"declaración inesperada con '{tok.value}' ({tok.type.name})"
                 )
+                self._errors.append(msg)
                 self._advance()
             return None
 
@@ -196,18 +208,19 @@ class Parser:
         id_list = self._parse_id_list()
         node.add(id_list)
 
-        self._expect(TokenType.SYM_SEMICOLON, "se esperaba ';' al final de declaración")
+        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';' al final de declaración")
         return node
 
     def _parse_tipo(self) -> ASTNode:
         tok = self._current()
         if self._current_is(TokenType.KW_INT, TokenType.KW_FLOAT, TokenType.KW_BOOL):
             return self._make_token_node(self._advance())
-        self._errors.append(
+        msg = (
             f"Error sintáctico en línea {tok.line}, col {tok.column}: "
             f"se esperaba tipo (int/float/bool)"
         )
-        return ASTNode(kind="tipo_error", line=tok.line if tok else None)
+        self._errors.append(msg)
+        return ASTNode(kind="error", value=msg, line=tok.line if tok else None)
 
     def _parse_id_list(self) -> ASTNode:
         node = ASTNode(kind="id_list")
@@ -220,7 +233,7 @@ class Parser:
             node.add(self._make_token_node(first))
 
         while self._current_is(TokenType.SYM_COMMA):
-            self._advance()  # consume ','
+            self._advance()
             nxt = self._expect(TokenType.IDENTIFIER, "se esperaba identificador después de ','")
             if nxt:
                 node.add(self._make_token_node(nxt))
@@ -280,7 +293,7 @@ class Parser:
             node.add(self._make_token_node(id_tok))
         if self._current_is(TokenType.OP_INCREMENT, TokenType.OP_DECREMENT):
             node.add(self._make_token_node(self._advance()))
-        self._expect(TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
         return node
 
     def _parse_asignacion(self) -> ASTNode:
@@ -293,7 +306,7 @@ class Parser:
         if id_tok:
             node.add(self._make_token_node(id_tok))
 
-        self._expect(TokenType.OP_ASSIGN, "se esperaba '='")
+        self._expect_node(node, TokenType.OP_ASSIGN, "se esperaba '='")
 
         sent_expr = self._parse_sent_expresion()
         node.add(sent_expr)
@@ -307,7 +320,6 @@ class Parser:
             node.line, node.col = tok.line, tok.column
 
         if self._current_is(TokenType.SYM_SEMICOLON):
-            # asignación vacía: "x = ;"
             self._advance()
             return node
 
@@ -317,7 +329,7 @@ class Parser:
         except ParseError:
             self._sync_to(_SYNC_EXPRESION)
 
-        self._expect(TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
         return node
 
     def _parse_seleccion(self) -> ASTNode:
@@ -334,7 +346,7 @@ class Parser:
         except ParseError:
             self._sync_to({TokenType.KW_THEN})
 
-        self._expect(TokenType.KW_THEN, "se esperaba 'then'")
+        self._expect_node(node, TokenType.KW_THEN, "se esperaba 'then'")
 
         then_body = self._parse_lista_sentencias()
         node.add(then_body)
@@ -346,10 +358,12 @@ class Parser:
             else_node.add(else_body)
             node.add(else_node)
 
-        self._expect(TokenType.KW_END, "se esperaba 'end'")
+        self._expect_node(node, TokenType.KW_END, "se esperaba 'end'")
+        self._skip_optional(TokenType.SYM_SEMICOLON)  # end; es aceptado
         return node
 
     def _parse_iteracion(self) -> ASTNode:
+        """while (expr) { } o while expr lista_sentencias end"""
         node = ASTNode(kind="iteracion")
         tok = self._current()
         if tok:
@@ -357,19 +371,36 @@ class Parser:
 
         self._expect(TokenType.KW_WHILE, "se esperaba 'while'")
 
+        # Paréntesis opcionales alrededor de la condición
+        has_paren = self._current_is(TokenType.SYM_LPAREN)
+        if has_paren:
+            self._advance()
+
         try:
             expr = self._parse_expresion()
             node.add(expr)
         except ParseError:
-            self._sync_to(_FIRST_SENTENCIA | {TokenType.KW_END})
+            self._sync_to(_FIRST_SENTENCIA | {TokenType.KW_END, TokenType.SYM_LBRACE})
 
-        body = self._parse_lista_sentencias()
-        node.add(body)
+        if has_paren:
+            self._skip_optional(TokenType.SYM_RPAREN)
 
-        self._expect(TokenType.KW_END, "se esperaba 'end'")
+        # Cuerpo: llaves { } o lista_sentencias + end
+        if self._current_is(TokenType.SYM_LBRACE):
+            self._advance()
+            body = self._parse_lista_sentencias(stop_tokens={TokenType.SYM_RBRACE})
+            node.add(body)
+            self._expect_node(node, TokenType.SYM_RBRACE, "se esperaba '}'")
+        else:
+            body = self._parse_lista_sentencias()
+            node.add(body)
+            self._expect_node(node, TokenType.KW_END, "se esperaba 'end'")
+
+        self._skip_optional(TokenType.SYM_SEMICOLON)  # }; o end; son aceptados
         return node
 
     def _parse_repeticion(self) -> ASTNode:
+        """do { } while (expr) o do lista_sentencias while expr"""
         node = ASTNode(kind="repeticion")
         tok = self._current()
         if tok:
@@ -377,10 +408,22 @@ class Parser:
 
         self._expect(TokenType.KW_DO, "se esperaba 'do'")
 
-        body = self._parse_lista_sentencias(stop_tokens={TokenType.KW_WHILE})
-        node.add(body)
+        # Cuerpo: llaves { } o lista_sentencias (hasta while)
+        if self._current_is(TokenType.SYM_LBRACE):
+            self._advance()
+            body = self._parse_lista_sentencias(stop_tokens={TokenType.SYM_RBRACE})
+            node.add(body)
+            self._expect_node(node, TokenType.SYM_RBRACE, "se esperaba '}'")
+        else:
+            body = self._parse_lista_sentencias(stop_tokens={TokenType.KW_WHILE})
+            node.add(body)
 
-        self._expect(TokenType.KW_WHILE, "se esperaba 'while'")
+        self._expect_node(node, TokenType.KW_WHILE, "se esperaba 'while'")
+
+        # Paréntesis opcionales alrededor de la condición
+        has_paren = self._current_is(TokenType.SYM_LPAREN)
+        if has_paren:
+            self._advance()
 
         try:
             expr = self._parse_expresion()
@@ -388,6 +431,10 @@ class Parser:
         except ParseError:
             self._sync_to(_SYNC_SENTENCIA)
 
+        if has_paren:
+            self._skip_optional(TokenType.SYM_RPAREN)
+
+        self._skip_optional(TokenType.SYM_SEMICOLON)  # do...while(x); es aceptado
         return node
 
     def _parse_sent_in(self) -> ASTNode:
@@ -397,13 +444,13 @@ class Parser:
             node.line, node.col = tok.line, tok.column
 
         self._expect(TokenType.KW_CIN, "se esperaba 'cin'")
-        self._expect(TokenType.OP_SHIFT_RIGHT, "se esperaba '>>'")
+        self._expect_node(node, TokenType.OP_SHIFT_RIGHT, "se esperaba '>>'")
 
         id_tok = self._expect(TokenType.IDENTIFIER, "se esperaba identificador")
         if id_tok:
             node.add(self._make_token_node(id_tok))
 
-        self._expect(TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
         return node
 
     def _parse_sent_out(self) -> ASTNode:
@@ -413,12 +460,12 @@ class Parser:
             node.line, node.col = tok.line, tok.column
 
         self._expect(TokenType.KW_COUT, "se esperaba 'cout'")
-        self._expect(TokenType.OP_SHIFT_LEFT, "se esperaba '<<'")
+        self._expect_node(node, TokenType.OP_SHIFT_LEFT, "se esperaba '<<'")
 
         salida = self._parse_salida()
         node.add(salida)
 
-        self._expect(TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
         return node
 
     def _parse_salida(self) -> ASTNode:
@@ -430,7 +477,6 @@ class Parser:
         if self._current_is(TokenType.STRING_LITERAL):
             str_tok = self._advance()
             node.add(self._make_token_node(str_tok))
-            # salida → cadena [ << expresion ]
             if self._current_is(TokenType.OP_SHIFT_LEFT):
                 self._advance()
                 try:
@@ -439,7 +485,6 @@ class Parser:
                 except ParseError:
                     self._sync_to(_SYNC_SENTENCIA)
         else:
-            # salida → expresion [ << cadena ]
             try:
                 expr = self._parse_expresion()
                 node.add(expr)
@@ -563,7 +608,7 @@ class Parser:
                 node.add(expr)
             except ParseError:
                 self._sync_to({TokenType.SYM_RPAREN})
-            self._expect(TokenType.SYM_RPAREN, "se esperaba ')'")
+            self._expect_node(node, TokenType.SYM_RPAREN, "se esperaba ')'")
             return node
 
         # Literales y identificador
@@ -575,9 +620,10 @@ class Parser:
             return self._make_token_node(self._advance())
 
         # No es un componente válido
-        self._errors.append(
+        msg = (
             f"Error sintáctico en línea {tok.line}, col {tok.column}: "
             f"expresión inválida con '{tok.value}' ({tok.type.name})"
         )
+        self._errors.append(msg)
         self._sync_to(_SYNC_EXPRESION)
         raise ParseError(f"Invalid componente at {tok.line}:{tok.column}")

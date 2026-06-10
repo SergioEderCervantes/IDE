@@ -82,7 +82,7 @@ class CompilerRunner(QObject):
         if "sintactico" in results:
             try:
                 data = _json.loads(results["sintactico"])
-                if data.get("success") and data.get("ast"):
+                if data.get("ast"):  # mostrar árbol aunque haya errores sintácticos
                     self.ast_ready.emit(data["ast"])
             except (ValueError, KeyError):
                 pass
