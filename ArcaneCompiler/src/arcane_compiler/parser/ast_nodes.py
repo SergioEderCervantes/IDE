@@ -5,12 +5,17 @@ from typing import Optional
 
 @dataclass
 class ASTNode:
-    """Nodo del Árbol Sintáctico Abstracto."""
+    """Nodo del Árbol Sintáctico Abstracto.
+
+    `attrs` guarda las anotaciones del análisis semántico (tipo, valor, dtype, dir, ...).
+    En el AST que produce el análisis sintáctico siempre está vacío.
+    """
     kind: str
     value: Optional[str] = None
     line: Optional[int] = None
     col: Optional[int] = None
     children: list[ASTNode] = field(default_factory=list)
+    attrs: dict = field(default_factory=dict)
 
     def add(self, child: ASTNode) -> ASTNode:
         """Agrega un hijo y retorna self para encadenamiento."""
@@ -25,5 +30,6 @@ class ASTNode:
             "value": self.value,
             "line": self.line,
             "col": self.col,
+            "attrs": dict(self.attrs),
             "children": [c.to_dict() for c in self.children],
         }

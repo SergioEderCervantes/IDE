@@ -1,0 +1,282 @@
+"""Analizador semántico: recorre el AST, construye la tabla de símbolos, calcula y
+propaga atributos, verifica tipos y reporta errores (GRAMATICA.md, secciones 6 a 9).
+
+El AST original no se modifica: se anota una copia. En la copia, cada nodo guarda sus
+atributos en `node.attrs`:
+
+  - dtype  (heredado)     tipo declarado, baja de la declaración a cada identificador
+  - dir                   dirección asignada en la tabla de símbolos (memloc)
+  - tipo   (sintetizado)  tipo de literales, identificadores y expresiones
+  - valor  (sintetizado)  solo en expresiones constantes
+
+Las conversiones implícitas int → float se insertan como nodos explícitos CONV.
+"""
+from __future__ import annotations
+import copy
+from dataclasses import dataclass
+from typing import Optional
+
+from ..errors import CompilerError, SEMANTICO
+from ..parser.ast_nodes import ASTNode
+from . import tipos
+from .constantes import evaluar_binaria, evaluar_unaria, valor_literal
+from .symbol_table import SymbolTable
+from .tipos import Tipo
+
+# Nodos que solo agrupan sentencias o declaraciones
+_CONTENEDORES = {"programa", "lista_declaracion", "lista_sentencias", "else_body"}
+
+
+@dataclass
+class SemanticResult:
+    ast: ASTNode                   # copia anotada del AST
+    tabla: SymbolTable
+    errores: list[CompilerError]
+    recorrido: list[dict]          # traza: {linea, accion, detalle}
+
+
+class SemanticAnalyzer:
+    def analyze(self, ast: ASTNode) -> SemanticResult:
+        self._tabla = SymbolTable()
+        self._errores: list[CompilerError] = []
+        self._recorrido: list[dict] = []
+
+        anotado = copy.deepcopy(ast)
+        self._traza(anotado.line, "inicio", "tabla de símbolos vacía, memloc = 0")
+        self._sentencia(anotado)
+        self._traza(
+            None, "fin",
+            f"{len(self._tabla)} símbolo(s) en la tabla, {len(self._errores)} error(es) semántico(s)",
+        )
+        return SemanticResult(anotado, self._tabla, self._errores, self._recorrido)
+
+    # ─── Declaraciones y sentencias ──────────────────────────────────────────
+
+    def _sentencia(self, node: ASTNode) -> None:
+        if node.kind in _CONTENEDORES:
+            for hijo in node.children:
+                self._sentencia(hijo)
+            return
+
+        manejador = {
+            "declaracion_variable": self._declaracion,
+            "asignacion": self._asignacion,
+            "incremento": self._incremento,
+            "seleccion": self._seleccion,
+            "iteracion": self._iteracion,
+            "repeticion": self._repeticion,
+            "sent_in": self._sent_in,
+            "sent_out": self._sent_out,
+        }.get(node.kind)
+        if manejador is not None:
+            manejador(node)
+        # KW_MAIN y nodos de error (no llegan aquí si hubo errores sintácticos) se ignoran
+
+    def _declaracion(self, node: ASTNode) -> None:
+        """declaracion_variable → tipo id_list ;   id_list.dtype = tipo.tipo (heredado)"""
+        nodo_tipo, id_list = node.children[0], node.children[1]
+        dtype = tipos.TIPO_DE_DECLARACION.get(nodo_tipo.kind)
+        if dtype is None:
+            return
+        nodo_tipo.attrs["tipo"] = dtype.value
+        id_list.attrs["dtype"] = dtype.value
+
+        for ident in id_list.children:
+            ident.attrs["dtype"] = dtype.value
+            simbolo = self._tabla.insert(ident.value, dtype, ident.line)
+            if simbolo is None:
+                previo = self._tabla.lookup(ident.value)
+                self._error(
+                    ident,
+                    f"declaración duplicada: '{ident.value}' ya fue declarada en la línea "
+                    f"{previo.declaracion}",
+                )
+                self._traza(ident.line, "insertar", f"{ident.value}: ya existe en la tabla ✗")
+                continue
+            ident.attrs["dir"] = simbolo.direccion
+            self._traza(
+                ident.line, "insertar",
+                f"{ident.value}: {dtype} (dtype heredado de '{nodo_tipo.value}'), "
+                f"dirección {simbolo.direccion}",
+            )
+
+    def _asignacion(self, node: ASTNode) -> None:
+        ident = node.children[0]
+        destino = self._identificador(ident)
+
+        if len(node.children) < 2:
+            self._error(node, f"asignación sin expresión: falta el valor que se asigna a '{ident.value}'")
+            return
+
+        origen = self._expresion(node.children[1])
+        r = tipos.asignacion(ident.value, destino, origen)
+        if r.convertir_der:
+            node.children[1] = self._convertir(node.children[1])
+
+        expr = node.children[1]
+        valor = f" (valor {_formato(expr.attrs['valor'])})" if "valor" in expr.attrs else ""
+        if r.error:
+            self._error(node, r.error)
+            veredicto = "✗"
+        elif r.convertir_der:
+            veredicto = "✓ con conversión int → float"
+        else:
+            veredicto = "✓"
+        if Tipo.ERROR not in (destino, origen):
+            node.attrs["verificacion"] = f"{destino} ← {origen} {veredicto}"
+            self._traza(node.line, "asignación", f"{ident.value} ({destino}) ← {origen}{valor} {veredicto}")
+
+    def _incremento(self, node: ASTNode) -> None:
+        ident, op = node.children[0], node.children[1]
+        t = self._identificador(ident)
+        r = tipos.operacion_unaria(op.kind, op.value, t)
+        if r.error:
+            self._error(op, r.error)
+        node.attrs["tipo"] = r.tipo.value
+
+    def _seleccion(self, node: ASTNode) -> None:
+        self._condicion("if", node, node.children[0])
+        for hijo in node.children[1:]:
+            self._sentencia(hijo)
+
+    def _iteracion(self, node: ASTNode) -> None:
+        self._condicion("while", node, node.children[0])
+        self._sentencia(node.children[1])
+
+    def _repeticion(self, node: ASTNode) -> None:
+        # El cuerpo va antes que la condición en el código fuente
+        self._sentencia(node.children[0])
+        self._condicion("until", node, node.children[1])
+
+    def _condicion(self, estructura: str, node: ASTNode, cond: ASTNode) -> None:
+        t = self._expresion(cond)
+        error = tipos.condicion(estructura, t)
+        if error:
+            self._error(cond, error)
+        if t != Tipo.ERROR:
+            veredicto = "✗" if error else "✓"
+            node.attrs["verificacion"] = f"condición {t} {veredicto}"
+            self._traza(cond.line, "condición", f"{estructura}: {t} {veredicto}")
+
+    def _sent_in(self, node: ASTNode) -> None:
+        self._identificador(node.children[0])
+
+    def _sent_out(self, node: ASTNode) -> None:
+        salida = node.children[0]
+        for elemento in salida.children:
+            if elemento.kind != "STRING_LITERAL":
+                self._expresion(elemento)
+
+    # ─── Expresiones ─────────────────────────────────────────────────────────
+
+    def _expresion(self, node: ASTNode) -> Tipo:
+        """Calcula y anota el tipo (y el valor si es constante). Devuelve el tipo."""
+        if node.kind in tipos.TIPO_DE_LITERAL:
+            node.attrs["tipo"] = tipos.TIPO_DE_LITERAL[node.kind].value
+            node.attrs["valor"] = valor_literal(node.kind, node.value)
+            return tipos.TIPO_DE_LITERAL[node.kind]
+
+        if node.kind == "IDENTIFIER":
+            return self._identificador(node)
+
+        if node.kind in tipos.OPERADORES_UNARIOS and len(node.children) == 1:
+            return self._unaria(node)
+
+        if node.kind in tipos.OPERADORES_BINARIOS and len(node.children) == 2:
+            return self._binaria(node)
+
+        # Nodo de error u otra forma que solo aparece con errores sintácticos
+        node.attrs["tipo"] = Tipo.ERROR.value
+        return Tipo.ERROR
+
+    def _unaria(self, node: ASTNode) -> Tipo:
+        operando = node.children[0]
+        t = self._expresion(operando)
+        r = tipos.operacion_unaria(node.kind, node.value, t)
+        if r.error:
+            self._error(node, r.error)
+        node.attrs["tipo"] = r.tipo.value
+        if r.tipo != Tipo.ERROR and "valor" in operando.attrs:
+            node.attrs["valor"] = evaluar_unaria(node.kind, operando.attrs["valor"])
+        return r.tipo
+
+    def _binaria(self, node: ASTNode) -> Tipo:
+        ti = self._expresion(node.children[0])
+        td = self._expresion(node.children[1])
+        r = tipos.operacion_binaria(node.kind, node.value, ti, td)
+        if r.error:
+            self._error(node, r.error)
+        if r.convertir_izq:
+            node.children[0] = self._convertir(node.children[0])
+        if r.convertir_der:
+            node.children[1] = self._convertir(node.children[1])
+        node.attrs["tipo"] = r.tipo.value
+
+        if r.tipo == Tipo.ERROR:
+            return r.tipo
+
+        # Basta con que el operando derecho sea constante: x / 0 y x ^ -1 se detectan aunque
+        # x sea una variable
+        izq, der = node.children
+        divisor_cero = node.kind in ("OP_DIVIDE", "OP_MODULO") and der.attrs.get("valor") == 0
+        exponente_negativo = (node.kind == "OP_POWER" and r.tipo == Tipo.INT
+                              and der.attrs.get("valor", 0) < 0)
+        if divisor_cero or exponente_negativo:
+            self._error(node, f"división entre cero en '{node.value}'" if divisor_cero else
+                        "exponente negativo en una potencia entera: el resultado no es int "
+                        "(usa un operando float, por ejemplo 2.0 ^ -1)")
+            node.attrs["tipo"] = Tipo.ERROR.value
+            return Tipo.ERROR
+
+        if "valor" in izq.attrs and "valor" in der.attrs:
+            # El tipo de los operandos (no el del resultado) decide la aritmética: en
+            # 7 / 2 > 3 la división es entera aunque la comparación dé bool.
+            valor = evaluar_binaria(node.kind, izq.attrs["valor"], der.attrs["valor"],
+                                    Tipo(izq.attrs["tipo"]))
+            if valor is not None:
+                node.attrs["valor"] = valor
+        return r.tipo
+
+    def _identificador(self, ident: ASTNode) -> Tipo:
+        """Uso de un identificador: búsqueda en la tabla de símbolos."""
+        simbolo = self._tabla.lookup(ident.value)
+        if simbolo is None:
+            self._error(ident, f"identificador no declarado: '{ident.value}'")
+            self._traza(ident.line, "buscar", f"{ident.value} → no está en la tabla ✗")
+            ident.attrs["tipo"] = Tipo.ERROR.value
+            return Tipo.ERROR
+        self._tabla.add_reference(ident.value, ident.line)
+        ident.attrs["tipo"] = simbolo.tipo.value
+        ident.attrs["dir"] = simbolo.direccion
+        self._traza(ident.line, "buscar", f"{ident.value} → {simbolo.tipo}, dirección {simbolo.direccion}")
+        return simbolo.tipo
+
+    def _convertir(self, node: ASTNode) -> ASTNode:
+        """Envuelve `node` (int) en un nodo explícito CONV int→float."""
+        conv = ASTNode(kind="CONV", value="int→float", line=node.line, col=node.col, children=[node])
+        conv.attrs["tipo"] = Tipo.FLOAT.value
+        if "valor" in node.attrs:
+            conv.attrs["valor"] = float(node.attrs["valor"])
+        self._traza(node.line, "conversión", f"{_describir(node)}: int → float")
+        return conv
+
+    # ─── Registro ────────────────────────────────────────────────────────────
+
+    def _error(self, node: ASTNode, mensaje: str) -> None:
+        self._errores.append(CompilerError(SEMANTICO, mensaje, node.line, node.col))
+
+    def _traza(self, linea: Optional[int], accion: str, detalle: str) -> None:
+        self._recorrido.append({"linea": linea, "accion": accion, "detalle": detalle})
+
+
+def _describir(node: ASTNode) -> str:
+    """Texto corto de un nodo para la traza: el lexema o el operador."""
+    if node.children:
+        return f"expresión '{node.value}' (col {node.col})"
+    return f"'{node.value}' (col {node.col})"
+
+
+def _formato(valor) -> str:
+    if isinstance(valor, bool):
+        return "true" if valor else "false"
+    return str(valor)
