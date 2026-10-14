@@ -7,10 +7,12 @@ from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
     """
-    Runs the external compiler script asynchronously and parses its output.
-    Ejecuta el programa compilador externo de manera asincrona y parsea el output:
-    Output de compilacion exitosa: Diccionario [fase]=output
-    Output de compilacion de error: String de error
+    Ejecuta el compilador externo (arcane-compiler) de manera asíncrona y parsea su salida.
+
+    - compilation_finished(dict): el compilador terminó. Las llaves son las secciones en
+      minúsculas (lexico, sintactico, ...). "errores" ya viene parseado como dict:
+      {lexico, sintactico, semantico: list[{linea, columna, mensaje}] | None, avisos: list[str]}.
+    - compilation_error(str): el compilador no pudo ejecutarse o falló (mensaje para el usuario).
     """
     compilation_started = pyqtSignal()
     compilation_finished = pyqtSignal(dict)
@@ -24,6 +26,7 @@ class CompilerRunner(QObject):
         self.process.readyReadStandardOutput.connect(self._handle_stdout)
         self.process.readyReadStandardError.connect(self._handle_stderr)
         self.process.finished.connect(self._handle_finished)
+        self.process.errorOccurred.connect(self._handle_process_error)
 
         self._output_buffer = ""
         self._error_buffer = ""
@@ -38,8 +41,13 @@ class CompilerRunner(QObject):
                 continue
         return data.decode("utf-8", errors="replace")
 
+    def is_running(self) -> bool:
+        return self.process.state() != QProcess.ProcessState.NotRunning
+
     def _run_compiler(self, source_file: str, phase: str):
-        """Inicia el proceso de compilacion"""
+        """Inicia el proceso de compilacion (se ignora si ya hay una en curso)"""
+        if self.is_running():
+            return
         self.compilation_started.emit()
         self._output_buffer = ""
         self._error_buffer = ""
@@ -57,10 +65,24 @@ class CompilerRunner(QObject):
         data = bytes(self.process.readAllStandardError())       # type: ignore
         self._error_buffer += self._decode_process_output(data)
 
+    def _handle_process_error(self, error: QProcess.ProcessError):
+        """Si el proceso ni siquiera arranca, Qt no emite finished: se avisa aquí."""
+        if error == QProcess.ProcessError.FailedToStart:
+            self.compilation_error.emit(
+                f"No se pudo iniciar el compilador ({self.process.program()}).\n"
+                "Verifica que 'arcane-compiler' esté instalado en el mismo entorno que el IDE."
+            )
+
     def _handle_finished(self):
         """Callback que se ejecuta cuando el proceso termina, manda las señales con el output parseado"""
+        # Código distinto de 0 = invocación inválida o falla interna del compilador.
+        # Los errores del programa fuente salen con código 0 dentro de la sección ERRORES.
         if self.process.exitStatus() != QProcess.ExitStatus.NormalExit or self.process.exitCode() != 0:
-            error_message = self._error_buffer or "Compiler process failed to execute."
+            error_message = (
+                self._error_buffer.strip()
+                or self._output_buffer.strip()
+                or f"El compilador terminó inesperadamente (código {self.process.exitCode()})."
+            )
             self.compilation_error.emit(error_message)
         else:
             results = self._parse_output(self._output_buffer)
@@ -79,13 +101,18 @@ class CompilerRunner(QObject):
             content = match.group('content').strip()
             results[name] = content
 
-        if "sintactico" in results:
+        if results.get("sintactico"):
             try:
                 data = _json.loads(results["sintactico"])
                 if data.get("ast"):  # mostrar árbol aunque haya errores sintácticos
                     self.ast_ready.emit(data["ast"])
             except (ValueError, KeyError):
                 pass
+
+        try:
+            results["errores"] = _json.loads(results.get("errores") or "null")
+        except ValueError:
+            results["errores"] = None
 
         return results
 

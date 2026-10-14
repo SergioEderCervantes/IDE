@@ -1,5 +1,10 @@
+import json
+from typing import Optional
 from ..lexer.token_type import TokenType
 from ..lexer.token import Token
+from ..errors import CompilerError, LEXICO, SINTACTICO, SEMANTICO
+
+
 def emit_section(name: str, content: str) -> None:
     print(f"==={name}===")
     print(content)
@@ -19,10 +24,20 @@ def format_token_table(tokens: list[Token]) -> str:
     return "\n".join(rows)
 
 
-def format_error_list(errors: list) -> str:
-    lines = []
-    for tok in errors:
-        lines.append(
-            f"Error léxico en línea {tok.line}, columna {tok.column}: {tok.value}"
-        )
-    return "\n".join(lines)
+def format_errors(errores: dict[str, Optional[list[CompilerError]]], avisos: list[str]) -> str:
+    """
+    Serializa los errores por fase al JSON que muestra el IDE.
+
+    Cada fase es una lista de {linea, columna, mensaje}, o null si la fase no se
+    ejecutó (para distinguir "sin errores" de "no se analizó").
+    """
+    def por_fase(fase: str) -> Optional[list[dict]]:
+        lista = errores.get(fase)
+        return None if lista is None else [e.to_dict() for e in lista]
+
+    return json.dumps({
+        "lexico": por_fase(LEXICO),
+        "sintactico": por_fase(SINTACTICO),
+        "semantico": por_fase(SEMANTICO),
+        "avisos": avisos,
+    }, indent=2, ensure_ascii=False)

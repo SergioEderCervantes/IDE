@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Optional
 from ..lexer.token import Token
 from ..lexer.token_type import TokenType
+from ..errors import CompilerError, SINTACTICO
 from .ast_nodes import ASTNode
 
 
@@ -51,11 +52,27 @@ class Parser:
             t for t in tokens if t.type not in _SKIP_TYPES
         ]
         self._pos: int = 0
-        self._errors: list[str] = []
+        self._errors: list[CompilerError] = []
 
     @property
     def errors(self) -> list[str]:
+        """Errores como texto: 'Error sintáctico en línea L, col C: ...'."""
+        return [str(e) for e in self._errors]
+
+    @property
+    def diagnostics(self) -> list[CompilerError]:
+        """Errores con estructura (fase, línea, columna, mensaje)."""
         return list(self._errors)
+
+    def _error(self, tok: Optional[Token], msg: str) -> CompilerError:
+        """Registra un error sintáctico en la posición de `tok` (None = fin de archivo)."""
+        error = CompilerError(
+            SINTACTICO, msg,
+            linea=tok.line if tok else None,
+            columna=tok.column if tok else None,
+        )
+        self._errors.append(error)
+        return error
 
     # ─── Primitivas de acceso a tokens ───────────────────────────────────────
 
@@ -89,20 +106,16 @@ class Parser:
         if not msg:
             msg = f"se esperaba '{ttype.name}'"
         if tok is not None:
-            full_msg = (
-                f"Error sintáctico en línea {tok.line}, col {tok.column}: "
-                f"{msg}, se encontró '{tok.value}' ({tok.type.name})"
-            )
+            self._error(tok, f"{msg}, se encontró '{tok.value}' ({tok.type.name})")
         else:
-            full_msg = f"Error sintáctico: fin de archivo inesperado, {msg}"
-        self._errors.append(full_msg)
+            self._error(None, f"fin de archivo inesperado, {msg}")
         return None
 
     def _expect_node(self, parent: ASTNode, ttype: TokenType, msg: str = "") -> bool:
         """Como _expect pero agrega un nodo de error al padre si falla."""
         tok = self._expect(ttype, msg)
         if tok is None:
-            err_msg = self._errors[-1] if self._errors else msg
+            err_msg = str(self._errors[-1]) if self._errors else msg
             found = self._current()  # el token que apareció en lugar del esperado
             parent.add(ASTNode(
                 kind="error",
@@ -137,11 +150,7 @@ class Parser:
     def parse(self) -> ASTNode:
         node = self._parse_programa()
         if not self._is_at_end():
-            tok = self._current()
-            self._errors.append(
-                f"Error sintáctico en línea {tok.line}, col {tok.column}: "
-                f"tokens inesperados después del fin del programa"
-            )
+            self._error(self._current(), "tokens inesperados después del fin del programa")
         return node
 
     # ─── Reglas gramaticales ─────────────────────────────────────────────────
@@ -192,11 +201,7 @@ class Parser:
         else:
             tok = self._current()
             if tok:
-                msg = (
-                    f"Error sintáctico en línea {tok.line}, col {tok.column}: "
-                    f"declaración inesperada con '{tok.value}' ({tok.type.name})"
-                )
-                self._errors.append(msg)
+                self._error(tok, f"declaración inesperada con '{tok.value}' ({tok.type.name})")
                 self._advance()
             return None
 
@@ -219,13 +224,8 @@ class Parser:
         tok = self._current()
         if self._current_is(TokenType.KW_INT, TokenType.KW_FLOAT, TokenType.KW_BOOL):
             return self._make_token_node(self._advance())
-        msg = (
-            f"Error sintáctico en línea {tok.line}, col {tok.column}: "
-            f"se esperaba tipo (int/float/bool)"
-        )
-        self._errors.append(msg)
-        return ASTNode(kind="error", value=msg,
-                       line=tok.line if tok else None, col=tok.column if tok else None)
+        error = self._error(tok, "se esperaba tipo (int/float/bool)")
+        return ASTNode(kind="error", value=str(error), line=error.linea, col=error.columna)
 
     def _parse_id_list(self) -> ASTNode:
         node = ASTNode(kind="id_list")
@@ -280,10 +280,7 @@ class Parser:
                 return self._parse_incremento()
             return self._parse_asignacion()
         else:
-            self._errors.append(
-                f"Error sintáctico en línea {tok.line}, col {tok.column}: "
-                f"sentencia inesperada con '{tok.value}'"
-            )
+            self._error(tok, f"sentencia inesperada con '{tok.value}'")
             self._sync_to(_SYNC_SENTENCIA)
             return None
 
@@ -603,17 +600,17 @@ class Parser:
         para continuar el análisis sin errores en cascada."""
         if self._current_is(TokenType.OP_INCREMENT, TokenType.OP_DECREMENT):
             tok = self._advance()
-            self._errors.append(
-                f"Error sintáctico en línea {tok.line}, col {tok.column}: "
+            self._error(
+                tok,
                 f"'{tok.value}' solo puede usarse como sentencia (x{tok.value};), "
-                f"no dentro de una expresión"
+                f"no dentro de una expresión",
             )
 
     def _parse_componente(self) -> ASTNode:
         tok = self._current()
 
         if tok is None:
-            self._errors.append("Error sintáctico: fin de archivo inesperado en expresión")
+            self._error(None, "fin de archivo inesperado en expresión")
             raise ParseError("EOF in componente")
 
         # ! componente  (negación unaria)
@@ -644,10 +641,6 @@ class Parser:
             return self._make_token_node(self._advance())
 
         # No es un componente válido
-        msg = (
-            f"Error sintáctico en línea {tok.line}, col {tok.column}: "
-            f"expresión inválida con '{tok.value}' ({tok.type.name})"
-        )
-        self._errors.append(msg)
+        self._error(tok, f"expresión inválida con '{tok.value}' ({tok.type.name})")
         self._sync_to(_SYNC_EXPRESION)
         raise ParseError(f"Invalid componente at {tok.line}:{tok.column}")

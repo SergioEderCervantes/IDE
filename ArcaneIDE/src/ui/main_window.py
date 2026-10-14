@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
         self.file_manager = FileManager()
         self.compiler_runner = CompilerRunner()
         self.ignore_text_changes = False  # Bandera para ignorar cambios de texto programáticos
+        self._result_tab = "tokens"  # Pestaña a mostrar al compilar sin errores
         
         # Definiciones de tema: (nombre_tema, nombre_mostrado, es_claro)
         self.themes = [
@@ -89,11 +90,11 @@ class MainWindow(QMainWindow):
         self.file_actions = [self.new_action, self.open_action, self.save_action, self.save_as_action, self.close_file_action, self.exit_action, self.zoom_in_action, self.zoom_out_action, self.reset_zoom_action]
 
         # Acciones de fases del compilador con iconos de QtAwesome
-        self.lexical_action = QAction(qta.icon('fa6s.code', color='#61dafb'), "Análisis léxico", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis)) # type: ignore
-        self.syntactic_action = QAction(qta.icon('fa6s.diagram-project', color='#61dafb'), "Análisis sintáctico", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis)) # type: ignore
-        self.semantic_action = QAction(qta.icon('fa6s.circle-check', color='#61dafb'), "Análisis semántico", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis)) # type: ignore
-        self.intermediate_action = QAction(qta.icon('fa6s.terminal', color='#61dafb'), "Código intermedio", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation)) # type: ignore
-        self.execute_action = QAction(qta.icon('fa6s.play', color='#61dafb'), "Ejecutar", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution)) # type: ignore
+        self.lexical_action = QAction(qta.icon('fa6s.code', color='#61dafb'), "Análisis léxico", self, shortcut="F5", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_lexical_analysis, "tokens")) # type: ignore
+        self.syntactic_action = QAction(qta.icon('fa6s.diagram-project', color='#61dafb'), "Análisis sintáctico", self, shortcut="F6", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_syntactic_analysis, "sintáctico")) # type: ignore
+        self.semantic_action = QAction(qta.icon('fa6s.circle-check', color='#61dafb'), "Análisis semántico", self, shortcut="F7", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_semantic_analysis, "semántico")) # type: ignore
+        self.intermediate_action = QAction(qta.icon('fa6s.terminal', color='#61dafb'), "Código intermedio", self, shortcut="F8", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_intermediate_generation, "código_intermedio")) # type: ignore
+        self.execute_action = QAction(qta.icon('fa6s.play', color='#61dafb'), "Ejecutar", self, shortcut="F9", triggered=lambda: self._run_compiler_phase(self.compiler_runner.run_execution, "ejecución")) # type: ignore
 
         self.new_action.setToolTip("Nuevo")
         self.open_action.setToolTip("Abrir")
@@ -252,7 +253,12 @@ class MainWindow(QMainWindow):
             return False
         return True
 
-    def _run_compiler_phase(self, phase_func):
+    def _run_compiler_phase(self, phase_func, result_tab: str):
+        """Compila el archivo actual. `result_tab` es la pestaña que se muestra si no hay errores."""
+        if self.compiler_runner.is_running():
+            self.status_bar.showMessage("Ya hay una compilación en curso.", 3000)
+            return
+
         if self.file_manager.is_modified or not self.file_manager.get_current_file():
             if not self._prompt_to_save():
                 return
@@ -262,22 +268,35 @@ class MainWindow(QMainWindow):
              return
 
         self.output_tabs.clear_all()
+        self._result_tab = result_tab
         phase_func(str(self.file_manager.get_current_file()))
 
     def _handle_compilation_finished(self, results: dict):
-        self.status_bar.showMessage("Compilación finalizada correctamente.", 5000)
         self.output_tabs.update_tokens(results.get("lexico", ""))
         self.output_tabs.update_ast(results.get("sintactico", ""))
         self.output_tabs.update_semantic(results.get("semantico", ""))
         self.output_tabs.update_intermediate_code(results.get("codigo_intermedio", ""))
         self.output_tabs.update_symbol_table(results.get("tabla_simbolos", ""))
-        self.output_tabs.update_errors(results.get("errores", "# Sin errores"))
         self.output_tabs.update_execution(results.get("ejecucion", ""))
 
+        errores = results.get("errores") or {}
+        total = self.output_tabs.update_errors(errores)
+        avisos = errores.get("avisos") or []
+
+        if total:
+            self.status_bar.showMessage(f"Compilación terminada con {total} error(es). Revisa la pestaña Errores.")
+            self.output_tabs.focus_tab("errores")
+        elif avisos:
+            self.status_bar.showMessage(avisos[0])
+            self.output_tabs.focus_tab("errores")
+        else:
+            self.status_bar.showMessage("Compilación terminada sin errores.", 5000)
+            self.output_tabs.focus_tab(self._result_tab)
+
     def _handle_compilation_error(self, error_msg: str):
-        self.status_bar.showMessage("La compilación falló.", 5000)
-        self.output_tabs.update_errors(f"ERROR DEL COMPILADOR:\n{error_msg}")
-        self.output_tabs.setCurrentWidget(self.output_tabs.tabs["errores"])
+        self.status_bar.showMessage("El compilador no pudo completar la ejecución. Revisa la pestaña Errores.")
+        self.output_tabs.show_compiler_failure(error_msg)
+        self.output_tabs.focus_tab("errores")
 
     def _on_ast_ready(self, ast_dict: dict) -> None:
         self.ignore_text_changes = True

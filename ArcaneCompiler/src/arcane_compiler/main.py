@@ -1,10 +1,112 @@
+"""Punto de entrada de la CLI: arcane-compiler <archivo> <fase>.
+
+Las fases forman un pipeline: cada una ejecuta las anteriores y se detiene si
+una fase previa encontró errores.
+
+    léxico ──(sin errores)──► sintáctico ──(sin errores)──► semántico ...
+
+El código de salida es 0 siempre que el compilador termine, aunque el programa
+tenga errores (esos errores son el resultado del análisis). Solo es 1 cuando la
+invocación es inválida (argumentos, fase o archivo); el motivo va a stderr.
+"""
 import sys
-import json
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
-from arcane_compiler.utils.output import emit_section, format_token_table, format_error_list
+from arcane_compiler.errors import CompilerError, LEXICO, SINTACTICO, SEMANTICO
+from arcane_compiler.lexer.lexer import Lexer
+from arcane_compiler.lexer.token import Token
+from arcane_compiler.parser.ast_builder import build_ast
+from arcane_compiler.parser.ast_nodes import ASTNode
+from arcane_compiler.parser.ast_serializer import ast_to_json
+from arcane_compiler.parser.parser import Parser
+from arcane_compiler.utils.output import emit_section, format_errors, format_token_table
 
-VALID_PHASES = {"lexical", "syntactic", "semantic", "intermediate", "execution", "all"}
+# Fases en orden de ejecución
+PHASES = ["lexical", "syntactic", "semantic", "intermediate", "execution"]
+VALID_PHASES = set(PHASES) | {"all"}
+
+_PHASE_TITLES = {
+    "semantic": "análisis semántico",
+    "intermediate": "generación de código intermedio",
+    "execution": "ejecución",
+}
+
+
+@dataclass
+class CompilationResult:
+    """Lo que produjo cada fase. None = la fase no se ejecutó."""
+    tokens: Optional[list[Token]] = None
+    ast: Optional[ASTNode] = None
+    errores: dict[str, Optional[list[CompilerError]]] = field(
+        default_factory=lambda: {LEXICO: None, SINTACTICO: None, SEMANTICO: None}
+    )
+    avisos: list[str] = field(default_factory=list)
+
+
+def _requested_phases(phase: str) -> list[str]:
+    """'syntactic' → ['lexical', 'syntactic']; 'all' → todas."""
+    if phase == "all":
+        return list(PHASES)
+    return PHASES[: PHASES.index(phase) + 1]
+
+
+def compile_source(source: str, phase: str) -> CompilationResult:
+    """Ejecuta el pipeline hasta `phase` y devuelve lo que produjo cada fase."""
+    requested = _requested_phases(phase)
+    result = CompilationResult()
+
+    # ── Fase 1: análisis léxico
+    tokens, lex_errors = Lexer(source).tokenize()
+    result.tokens = tokens
+    result.errores[LEXICO] = [
+        CompilerError(LEXICO, tok.value, tok.line, tok.column) for tok in lex_errors
+    ]
+
+    if "syntactic" not in requested:
+        return result
+    if result.errores[LEXICO]:
+        result.avisos.append(
+            "El análisis sintáctico no se ejecutó: corrige primero los errores léxicos."
+        )
+        return result
+
+    # ── Fase 2: análisis sintáctico
+    parser = Parser(tokens)
+    result.ast = build_ast(parser.parse())
+    result.errores[SINTACTICO] = parser.diagnostics
+
+    if "semantic" not in requested:
+        return result
+    if result.errores[SINTACTICO]:
+        result.avisos.append(
+            "El análisis semántico no se ejecutó: corrige primero los errores sintácticos."
+        )
+        return result
+
+    # ── Fases 3 a 5: pendientes de implementar
+    if phase in _PHASE_TITLES:
+        result.avisos.append(f"La fase de {_PHASE_TITLES[phase]} aún no está implementada.")
+    return result
+
+
+def emit_result(result: CompilationResult) -> None:
+    """Escribe el resultado en stdout con el protocolo de secciones que lee el IDE."""
+    tokens = format_token_table(result.tokens) if result.tokens is not None else ""
+
+    sintactico = ""
+    if result.errores[SINTACTICO] is not None:
+        errores = result.errores[SINTACTICO]
+        sintactico = ast_to_json(result.ast, not errores, [str(e) for e in errores])
+
+    emit_section("LEXICO", tokens)
+    emit_section("SINTACTICO", sintactico)
+    emit_section("SEMANTICO", "")
+    emit_section("CODIGO_INTERMEDIO", "")
+    emit_section("TABLA_SIMBOLOS", "")
+    emit_section("ERRORES", format_errors(result.errores, result.avisos))
+    emit_section("EJECUCION", "")
 
 
 def main() -> None:
@@ -18,74 +120,22 @@ def main() -> None:
     source_file = sys.argv[1]
     phase = sys.argv[2]
 
-    if not Path(source_file).exists():
-        emit_section("ERRORES", f"El archivo no existe: {source_file}")
-        sys.exit(1)
-
     if phase not in VALID_PHASES:
         print(f"Fase inválida: {phase}. Fases válidas: {', '.join(sorted(VALID_PHASES))}", file=sys.stderr)
         sys.exit(1)
 
-    if phase in ("lexical", "all"):
-        from arcane_compiler.lexer.lexer import Lexer
+    path = Path(source_file)
+    if not path.is_file():
+        print(f"El archivo no existe: {source_file}", file=sys.stderr)
+        sys.exit(1)
 
-        source = Path(source_file).read_text(encoding="utf-8")
-        lexer = Lexer(source)
-        tokens, lex_errors = lexer.tokenize()
+    try:
+        source = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        print(f"El archivo no está en UTF-8: {source_file}", file=sys.stderr)
+        sys.exit(1)
 
-        emit_section("LEXICO", format_token_table(tokens))
-        emit_section("SINTACTICO", "")
-        emit_section("SEMANTICO", "")
-        emit_section("CODIGO_INTERMEDIO", "")
-        emit_section("TABLA_SIMBOLOS", "")
-        emit_section("ERRORES", format_error_list(lex_errors))
-        emit_section("EJECUCION", "")
-
-    elif phase == "syntactic":
-        from arcane_compiler.lexer.lexer import Lexer
-        from arcane_compiler.parser.parser import Parser
-        from arcane_compiler.parser.ast_builder import build_ast
-        from arcane_compiler.parser.ast_serializer import ast_to_json
-
-        source = Path(source_file).read_text(encoding="utf-8")
-        lexer = Lexer(source)
-        tokens, lex_errors = lexer.tokenize()
-
-        if lex_errors:
-            emit_section("LEXICO", format_token_table(tokens))
-            emit_section("SINTACTICO", json.dumps({"success": False, "ast": None, "error_count": 0}))
-            emit_section("SEMANTICO", "")
-            emit_section("CODIGO_INTERMEDIO", "")
-            emit_section("TABLA_SIMBOLOS", "")
-            emit_section(
-                "ERRORES",
-                "BLOQUEADO: Elimina todos los errores léxicos antes del análisis sintáctico.\n"
-                + format_error_list(lex_errors),
-            )
-            emit_section("EJECUCION", "")
-            sys.exit(1)
-
-        parser = Parser(tokens)
-        ast = build_ast(parser.parse())
-        parse_errors = parser.errors
-        success = len(parse_errors) == 0
-
-        emit_section("LEXICO", format_token_table(tokens))
-        emit_section("SINTACTICO", ast_to_json(ast, success, parse_errors))
-        emit_section("SEMANTICO", "")
-        emit_section("CODIGO_INTERMEDIO", "")
-        emit_section("TABLA_SIMBOLOS", "")
-        emit_section("ERRORES", "\n".join(parse_errors) if parse_errors else "")
-        emit_section("EJECUCION", "")
-
-    else:
-        emit_section("LEXICO", "")
-        emit_section("SINTACTICO", "")
-        emit_section("SEMANTICO", "")
-        emit_section("CODIGO_INTERMEDIO", "")
-        emit_section("TABLA_SIMBOLOS", "")
-        emit_section("ERRORES", "")
-        emit_section("EJECUCION", "")
+    emit_result(compile_source(source, phase))
 
 
 if __name__ == "__main__":
