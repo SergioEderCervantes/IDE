@@ -79,6 +79,34 @@ def test_fase_pendiente_avisa():
     assert any("aún no está implementada" in a for a in r.avisos)
 
 
+def test_fase_semantica():
+    r = compile_source("main {\n int x;\n x = 1.5;\n}", "semantic")
+    assert r.semantico is not None and r.avisos == []
+    [error] = r.errores[SEMANTICO]
+    assert (error.fase, error.linea, error.columna) == (SEMANTICO, 3, 2)
+    # El AST de la fase sintáctica queda sin anotar; el anotado es una copia
+    assert r.ast.children[-1].children[1].attrs == {}
+    assert r.semantico.ast.children[-1].children[1].attrs["verificacion"] == "int ← float ✗"
+
+
+def test_fases_previas_no_ejecutan_semantico():
+    for fase in ("lexical", "syntactic"):
+        r = compile_source("main { int x; }", fase)
+        assert r.semantico is None and r.errores[SEMANTICO] is None
+
+
+def test_fase_all_ejecuta_semantico():
+    r = compile_source("main { x = 1; }", "all")
+    assert r.semantico is not None
+    assert [e.mensaje for e in r.errores[SEMANTICO]] == ["identificador no declarado: 'x'"]
+    assert r.avisos == []  # 'all' no avisa de las fases 4 y 5
+
+
+def test_errores_semanticos_bloquean_codigo_intermedio():
+    r = compile_source("main { x = 1; }", "intermediate")
+    assert any("corrige primero los errores semánticos" in a for a in r.avisos)
+
+
 # ─── CLI completa (proceso aparte, como la llama el IDE) ─────────────────────
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess:
@@ -128,6 +156,39 @@ def test_cli_errores_lexicos_en_fase_sintactica():
     assert len(errores["lexico"]) == 1 and errores["sintactico"] is None
     assert errores["avisos"]
     assert sections["SINTACTICO"] == ""
+
+
+def test_cli_fase_semantica_con_test_semantica():
+    source = (Path(__file__).parent / "samples" / "TestSemantica.txt").read_text(encoding="utf-8")
+    proc = _run_source(source, "semantic")
+    assert proc.returncode == 0
+    sections = _sections(proc.stdout)
+
+    errores = json.loads(sections["ERRORES"])
+    assert errores["lexico"] == [] and errores["sintactico"] == []
+    assert [e["linea"] for e in errores["semantico"]] == [4, 5, 14, 16, 33, 37]
+
+    semantico = json.loads(sections["SEMANTICO"])
+    assert semantico["success"] is False and semantico["error_count"] == 6
+    declaracion = semantico["ast"]["children"][-1]["children"][0]
+    assert declaracion["children"][1]["attrs"] == {"dtype": "int"}
+    assert semantico["recorrido"][0]["accion"] == "inicio"
+
+    tabla = json.loads(sections["TABLA_SIMBOLOS"])
+    assert [(s["nombre"], s["tipo"], s["direccion"]) for s in tabla] == [
+        ("x", "int", 0), ("y", "int", 1), ("z", "int", 2),
+        ("a", "float", 3), ("b", "float", 4), ("c", "float", 5),
+    ]
+
+    # El AST de la sección SINTACTICO sigue sin anotaciones
+    sintactico = json.loads(sections["SINTACTICO"])
+    assert sintactico["ast"]["children"][-1]["children"][0]["children"][1]["attrs"] == {}
+
+
+def test_cli_fase_sintactica_no_emite_semantico():
+    proc = _run_source("main { int x; }", "syntactic")
+    sections = _sections(proc.stdout)
+    assert sections["SEMANTICO"] == "" and sections["TABLA_SIMBOLOS"] == ""
 
 
 def test_cli_archivo_inexistente():

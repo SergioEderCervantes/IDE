@@ -51,7 +51,7 @@ class ErrorPanel(QWidget):
         for i, (key, titulo) in enumerate(_FASES):
             errores = data.get(key)
             if errores is None:
-                self._tablas[key].clear_rows()
+                self._tablas[key].clear()
                 self._fases.setTabText(i, f"{titulo} (—)")
                 continue
             self._tablas[key].set_rows(
@@ -74,7 +74,7 @@ class ErrorPanel(QWidget):
 
     def clear(self) -> None:
         for i, (key, titulo) in enumerate(_FASES):
-            self._tablas[key].clear_rows()
+            self._tablas[key].clear()
             self._fases.setTabText(i, f"{titulo} (—)")
         self._show_message("", None)
 

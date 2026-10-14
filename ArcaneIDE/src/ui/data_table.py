@@ -6,7 +6,9 @@ class DataTable(QTableWidget):
 
     def __init__(self, headers: list[str], parent=None):
         super().__init__(0, len(headers), parent)
-        self.setHorizontalHeaderLabels(headers)
+        # qt-material dibuja los encabezados en mayúsculas pero Qt mide el texto original;
+        # pasarlos ya en mayúsculas evita que el ancho calculado quede corto y se recorten
+        self.setHorizontalHeaderLabels([h.upper() for h in headers])
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setAlternatingRowColors(True)
@@ -24,6 +26,10 @@ class DataTable(QTableWidget):
                 self.setItem(r, c, QTableWidgetItem("" if value is None else str(value)))
         self.resizeRowsToContents()
 
-    def clear_rows(self) -> None:
-        """Vacía las filas conservando los encabezados (QTableWidget.clear() los borra)."""
+    def clear(self) -> None:
+        """Vacía las filas conservando los encabezados.
+
+        Reemplaza a QTableWidget.clear(), que también borra los encabezados; así la tabla
+        se puede limpiar igual que las demás pestañas (OutputTabs.clear_all).
+        """
         self.setRowCount(0)

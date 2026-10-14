@@ -274,9 +274,9 @@ class MainWindow(QMainWindow):
     def _handle_compilation_finished(self, results: dict):
         self.output_tabs.update_tokens(results.get("lexico", ""))
         self.output_tabs.update_ast(results.get("sintactico", ""))
-        self.output_tabs.update_semantic(results.get("semantico", ""))
+        self.output_tabs.update_semantic(results.get("semantico"))
         self.output_tabs.update_intermediate_code(results.get("codigo_intermedio", ""))
-        self.output_tabs.update_symbol_table(results.get("tabla_simbolos", ""))
+        self.output_tabs.update_symbol_table(results.get("tabla_simbolos"))
         self.output_tabs.update_execution(results.get("ejecucion", ""))
 
         errores = results.get("errores") or {}

@@ -21,14 +21,17 @@ from arcane_compiler.parser.ast_builder import build_ast
 from arcane_compiler.parser.ast_nodes import ASTNode
 from arcane_compiler.parser.ast_serializer import ast_to_json
 from arcane_compiler.parser.parser import Parser
-from arcane_compiler.utils.output import emit_section, format_errors, format_token_table
+from arcane_compiler.semantic.analyzer import SemanticAnalyzer, SemanticResult
+from arcane_compiler.utils.output import (
+    emit_section, format_errors, format_semantic, format_symbol_table, format_token_table,
+)
 
 # Fases en orden de ejecución
 PHASES = ["lexical", "syntactic", "semantic", "intermediate", "execution"]
 VALID_PHASES = set(PHASES) | {"all"}
 
+# Fases aún no implementadas
 _PHASE_TITLES = {
-    "semantic": "análisis semántico",
     "intermediate": "generación de código intermedio",
     "execution": "ejecución",
 }
@@ -39,6 +42,7 @@ class CompilationResult:
     """Lo que produjo cada fase. None = la fase no se ejecutó."""
     tokens: Optional[list[Token]] = None
     ast: Optional[ASTNode] = None
+    semantico: Optional[SemanticResult] = None
     errores: dict[str, Optional[list[CompilerError]]] = field(
         default_factory=lambda: {LEXICO: None, SINTACTICO: None, SEMANTICO: None}
     )
@@ -85,9 +89,19 @@ def compile_source(source: str, phase: str) -> CompilationResult:
         )
         return result
 
-    # ── Fases 3 a 5: pendientes de implementar
+    # ── Fase 3: análisis semántico (sobre una copia del AST; result.ast queda sin anotar)
+    result.semantico = SemanticAnalyzer().analyze(result.ast)
+    result.errores[SEMANTICO] = result.semantico.errores
+
+    # ── Fases 4 y 5: pendientes de implementar
     if phase in _PHASE_TITLES:
-        result.avisos.append(f"La fase de {_PHASE_TITLES[phase]} aún no está implementada.")
+        if result.errores[SEMANTICO]:
+            result.avisos.append(
+                f"La fase de {_PHASE_TITLES[phase]} no se ejecutó: "
+                "corrige primero los errores semánticos."
+            )
+        else:
+            result.avisos.append(f"La fase de {_PHASE_TITLES[phase]} aún no está implementada.")
     return result
 
 
@@ -100,11 +114,14 @@ def emit_result(result: CompilationResult) -> None:
         errores = result.errores[SINTACTICO]
         sintactico = ast_to_json(result.ast, not errores, [str(e) for e in errores])
 
+    semantico = format_semantic(result.semantico) if result.semantico else ""
+    tabla = format_symbol_table(result.semantico) if result.semantico else ""
+
     emit_section("LEXICO", tokens)
     emit_section("SINTACTICO", sintactico)
-    emit_section("SEMANTICO", "")
+    emit_section("SEMANTICO", semantico)
     emit_section("CODIGO_INTERMEDIO", "")
-    emit_section("TABLA_SIMBOLOS", "")
+    emit_section("TABLA_SIMBOLOS", tabla)
     emit_section("ERRORES", format_errors(result.errores, result.avisos))
     emit_section("EJECUCION", "")
 

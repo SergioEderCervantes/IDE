@@ -10,8 +10,12 @@ class CompilerRunner(QObject):
     Ejecuta el compilador externo (arcane-compiler) de manera asíncrona y parsea su salida.
 
     - compilation_finished(dict): el compilador terminó. Las llaves son las secciones en
-      minúsculas (lexico, sintactico, ...). "errores" ya viene parseado como dict:
-      {lexico, sintactico, semantico: list[{linea, columna, mensaje}] | None, avisos: list[str]}.
+      minúsculas (lexico, sintactico, ...). Las secciones JSON ya vienen parseadas:
+        errores:        {lexico, sintactico, semantico: list[{linea, columna, mensaje}] | None,
+                         avisos: list[str]}
+        semantico:      {success, ast (anotado), recorrido: list[{linea, accion, detalle}],
+                         error_count} | None
+        tabla_simbolos: list[{nombre, tipo, direccion, declaracion, referencias}] | None
     - compilation_error(str): el compilador no pudo ejecutarse o falló (mensaje para el usuario).
     """
     compilation_started = pyqtSignal()
@@ -109,10 +113,12 @@ class CompilerRunner(QObject):
             except (ValueError, KeyError):
                 pass
 
-        try:
-            results["errores"] = _json.loads(results.get("errores") or "null")
-        except ValueError:
-            results["errores"] = None
+        # Secciones JSON: se entregan ya parseadas (None si la fase no se ejecutó)
+        for seccion in ("errores", "semantico", "tabla_simbolos"):
+            try:
+                results[seccion] = _json.loads(results.get(seccion) or "null")
+            except ValueError:
+                results[seccion] = None
 
         return results
 
