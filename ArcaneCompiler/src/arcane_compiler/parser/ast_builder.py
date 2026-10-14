@@ -7,6 +7,7 @@ estructura con significado:
   - Las cadenas [operando, op, operando, ...] se vuelven nodos binarios cuyo
     tipo es el operador:  2 + 3 * 4  →  OP_PLUS(2, OP_MULTIPLY(3, 4)).
   - Los envoltorios sin significado (sent_expresion, ( expr )) desaparecen.
+  - Los operadores unarios quedan con un solo hijo: OP_NOT(x) y OP_NEG(x) (-x).
   - Las formas son estables: declaracion_variable siempre es [tipo, id_list]
     y sent_out siempre contiene un nodo salida.
   - Los nodos de error se conservan para que el árbol muestre dónde fallan.
@@ -47,6 +48,8 @@ def _build(node: ASTNode) -> ASTNode:
         return _build_grupo(node)
     if node.kind == "componente_not":
         return _build_not(node)
+    if node.kind == "menos_unario":
+        return _build_neg(node)
     return _copy(node, _build_children(node))
 
 
@@ -100,6 +103,22 @@ def _build_not(node: ASTNode) -> ASTNode:
     if op is None:
         return _copy(node, operands)
     return _copy(op, operands)
+
+
+def _build_neg(node: ASTNode) -> ASTNode:
+    """menos_unario[OP_MINUS, x] → OP_NEG(x).
+
+    Se usa un tipo distinto de OP_MINUS (resta) para que el análisis semántico no
+    tenga que distinguir por el número de hijos.
+    """
+    op, *operands = node.children
+    return ASTNode(
+        kind="OP_NEG",
+        value=op.value,
+        line=op.line,
+        col=op.col,
+        children=[_build(c) for c in operands],
+    )
 
 
 def _copy(node: ASTNode, children: list[ASTNode]) -> ASTNode:

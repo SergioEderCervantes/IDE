@@ -408,3 +408,51 @@ def test_ast_to_json():
     data = json.loads(ast_to_json(ast, not errors, errors))
     assert data["success"] is True and data["error_count"] == 0
     assert data["ast"] == ast.to_dict()
+
+
+# ─── Menos unario ────────────────────────────────────────────────────────────
+
+def _shape_kinds(node: ASTNode) -> str:
+    """Como _shape pero con el tipo de nodo, para distinguir OP_NEG (-x) de OP_MINUS (a - b)."""
+    if not node.children:
+        return node.value
+    return f"{node.kind}(" + ", ".join(_shape_kinds(c) for c in node.children) + ")"
+
+
+def test_menos_unario_literal_e_identificador():
+    assert _shape_kinds(_expr_ast("-5")) == "OP_NEG(5)"
+    assert _shape_kinds(_expr_ast("-x")) == "OP_NEG(x)"
+
+
+def test_menos_unario_vs_resta():
+    assert _shape_kinds(_expr_ast("a - -b")) == "OP_MINUS(a, OP_NEG(b))"
+    assert _shape_kinds(_expr_ast("- -a")) == "OP_NEG(OP_NEG(a))"
+
+
+def test_menos_unario_precedencia():
+    # Más débil que '^': -2 ^ 2 == -(2 ^ 2) == -4
+    assert _shape_kinds(_expr_ast("-2 ^ 2")) == "OP_NEG(OP_POWER(2, 2))"
+    # Más fuerte que '*' y '+'
+    assert _shape_kinds(_expr_ast("-a * b")) == "OP_MULTIPLY(OP_NEG(a), b)"
+    assert _shape_kinds(_expr_ast("-a + b")) == "OP_PLUS(OP_NEG(a), b)"
+    assert _shape_kinds(_expr_ast("-(a + b)")) == "OP_NEG(OP_PLUS(a, b))"
+
+
+def test_exponente_negativo():
+    assert _shape_kinds(_expr_ast("2 ^ -1")) == "OP_POWER(2, OP_NEG(1))"
+    assert _shape(_expr_ast("2 ^ 3 ^ 2")) == "^(2, ^(3, 2))"
+
+
+def test_menos_unario_en_condicion_y_salida():
+    _, errors = _build("main { if -x < 0 then cout << -x; end }")
+    assert errors == []
+
+
+def test_menos_unario_posicion():
+    neg = _expr_ast("-5")
+    assert (neg.kind, neg.value, neg.line, neg.col) == ("OP_NEG", "-", 1, 12)
+
+
+def test_menos_sin_operando_es_error():
+    _, errors = _build("main { x = -; }")
+    assert errors and "expresión inválida" in errors[0]

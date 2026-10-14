@@ -25,6 +25,11 @@ RESERVED: dict[str, TokenType] = {
 }
 
 
+def _is_digit(ch: str | None) -> bool:
+    """Solo 0-9. str.isdigit() también acepta '²', '٣', etc., que int() no puede convertir."""
+    return ch is not None and "0" <= ch <= "9"
+
+
 class Lexer:
     def __init__(self, source: str) -> None:
         self._source = source
@@ -84,7 +89,7 @@ class Lexer:
             return self._read_line_comment(start_line, start_col)
 
         # 4. Numbers
-        if ch is not None and ch.isdigit():
+        if _is_digit(ch):
             return self._read_number(start_line, start_col)
 
         # 5. Identifiers and keywords
@@ -168,19 +173,19 @@ class Lexer:
 
     def _read_number(self, start_line: int, start_col: int) -> Token:
         buf = ""
-        while self._pos < len(self._source) and self._peek().isdigit():
+        while self._pos < len(self._source) and _is_digit(self._peek()):
             buf += self._advance()
         # Check for real number
-        if self._peek() == "." and self._peek(1) is not None and self._peek(1).isdigit():
+        if self._peek() == "." and _is_digit(self._peek(1)):
             buf += self._advance()  # '.'
-            while self._pos < len(self._source) and self._peek().isdigit():
+            while self._pos < len(self._source) and _is_digit(self._peek()):
                 buf += self._advance()
             return Token(TokenType.REAL, buf, start_line, start_col)
         return Token(TokenType.INTEGER, buf, start_line, start_col)
 
     def _read_identifier(self, start_line: int, start_col: int) -> Token:
         buf = ""
-        while self._pos < len(self._source) and (self._peek().isalnum() or self._peek() == "_"):
+        while self._pos < len(self._source) and (self._peek().isalpha() or _is_digit(self._peek()) or self._peek() == "_"):
             buf += self._advance()
         token_type = RESERVED.get(buf, TokenType.IDENTIFIER)
         return Token(token_type, buf, start_line, start_col)

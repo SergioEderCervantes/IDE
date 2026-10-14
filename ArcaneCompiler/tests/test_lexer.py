@@ -120,5 +120,34 @@ class TestLexer(unittest.TestCase):
         self.assertGreaterEqual(len(errors), 3)
 
 
+class TestDigitosAscii(unittest.TestCase):
+    """Solo 0-9 son dígitos: '²' o '٣' pasan isdigit() pero int() no los convierte."""
+
+    def test_superindice_no_es_parte_del_numero(self):
+        tokens, errors = Lexer("2²").tokenize()
+        self.assertEqual([(t.type, t.value) for t in tokens], [(TokenType.INTEGER, "2")])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("²", errors[0].value)
+
+    def test_digito_no_ascii_es_invalido(self):
+        tokens, errors = Lexer("٣").tokenize()
+        self.assertEqual(tokens, [])
+        self.assertEqual(len(errors), 1)
+
+    def test_superindice_no_es_parte_del_identificador(self):
+        tokens, errors = Lexer("x²").tokenize()
+        self.assertEqual([(t.type, t.value) for t in tokens], [(TokenType.IDENTIFIER, "x")])
+        self.assertEqual(len(errors), 1)
+
+    def test_identificador_con_digitos_y_acentos(self):
+        tokens, errors = Lexer("año_2 x10").tokenize()
+        self.assertEqual([t.value for t in tokens], ["año_2", "x10"])
+        self.assertEqual(errors, [])
+
+    def test_valores_de_numeros_son_convertibles(self):
+        tokens, _ = Lexer("123 4.56 7").tokenize()
+        self.assertEqual([int(tokens[0].value), float(tokens[1].value), int(tokens[2].value)], [123, 4.56, 7])
+
+
 if __name__ == "__main__":
     unittest.main()

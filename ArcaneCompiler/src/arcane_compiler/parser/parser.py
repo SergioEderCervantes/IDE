@@ -564,18 +564,36 @@ class Parser:
         if tok:
             node.line, node.col = tok.line, tok.column
 
-        left = self._parse_factor()
+        left = self._parse_unario()
         node.add(left)
 
         while self._current_is(*_MULT_OPS):
             op_tok = self._advance()
             node.add(self._make_token_node(op_tok))
-            right = self._parse_factor()
+            right = self._parse_unario()
             node.add(right)
 
         return node
 
+    def _parse_unario(self) -> ASTNode:
+        """unario → '-' unario | factor
+
+        El menos unario tiene menor precedencia que '^':  -2 ^ 2 == -(2 ^ 2)
+        """
+        tok = self._current()
+        if tok is not None and tok.type == TokenType.OP_MINUS:
+            node = ASTNode(kind="menos_unario", line=tok.line, col=tok.column)
+            node.add(self._make_token_node(self._advance()))
+            node.add(self._parse_unario())
+            return node
+        return self._parse_factor()
+
     def _parse_factor(self) -> ASTNode:
+        """factor → componente { '^' unario }
+
+        El exponente es un unario para aceptar 2 ^ -1. Como unario vuelve a entrar a
+        factor, 2 ^ 3 ^ 2 se anida a la derecha: 2 ^ (3 ^ 2).
+        """
         node = ASTNode(kind="factor")
         tok = self._current()
         if tok:
@@ -588,7 +606,7 @@ class Parser:
         while self._current_is(TokenType.OP_POWER):
             op_tok = self._advance()
             node.add(self._make_token_node(op_tok))
-            right = self._parse_componente()
+            right = self._parse_unario()
             node.add(right)
             self._rechazar_incremento_en_expresion()
 
