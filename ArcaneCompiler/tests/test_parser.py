@@ -270,3 +270,32 @@ def test_aritmetica_asocia_a_la_izquierda():
 def test_parentesis_cambian_la_agrupacion():
     assert _shape(_expr_ast("(a || b) && c")) == "&&(||(a, b), c)"
     assert _shape(_expr_ast("(2 ^ 3) ^ 2")) == "^(^(2, 3), 2)"
+
+
+# ─── '++' / '--' solo como sentencia ─────────────────────────────────────────
+
+def test_incremento_como_sentencia_sigue_funcionando():
+    ast, errors = _parse("main { int x; float c; x++; c--; }")
+    assert errors == []
+    kinds = [n.kind for n in ast.children[-1].children]
+    assert kinds.count("incremento") == 2
+
+
+def test_incremento_en_asignacion_un_solo_error_claro():
+    ast, errors = _parse("main { y = x++; z = 1; }")
+    assert len(errors) == 1, errors
+    assert "solo puede usarse como sentencia" in errors[0]
+    # La recuperación no pierde la sentencia siguiente
+    assert [n.kind for n in ast.children[-1].children] == ["asignacion", "asignacion"]
+
+
+def test_decremento_en_condicion_un_solo_error_claro():
+    ast, errors = _parse("main { if x-- > 0 then y = 1; end }")
+    assert len(errors) == 1, errors
+    assert "'--'" in errors[0]
+
+
+def test_incremento_binario_es_error():
+    ast, errors = _parse("main { x = a ++ b; }")
+    assert errors, "a ++ b no debe aceptarse"
+    assert "'++' solo puede usarse como sentencia" in errors[0]

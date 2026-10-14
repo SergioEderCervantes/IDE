@@ -26,10 +26,8 @@ _REL_OPS = {
     TokenType.OP_GT, TokenType.OP_GE,
     TokenType.OP_EQ, TokenType.OP_NE,
 }
-_SUMA_OPS = {
-    TokenType.OP_PLUS, TokenType.OP_MINUS,
-    TokenType.OP_INCREMENT, TokenType.OP_DECREMENT,
-}
+# '++' y '--' no son operadores binarios: solo existen como sentencia (incremento)
+_SUMA_OPS = {TokenType.OP_PLUS, TokenType.OP_MINUS}
 _MULT_OPS = {
     TokenType.OP_MULTIPLY, TokenType.OP_DIVIDE, TokenType.OP_MODULO,
 }
@@ -581,14 +579,28 @@ class Parser:
 
         left = self._parse_componente()
         node.add(left)
+        self._rechazar_incremento_en_expresion()
 
         while self._current_is(TokenType.OP_POWER):
             op_tok = self._advance()
             node.add(self._make_token_node(op_tok))
             right = self._parse_componente()
             node.add(right)
+            self._rechazar_incremento_en_expresion()
 
         return node
+
+    def _rechazar_incremento_en_expresion(self) -> None:
+        """'++'/'--' solo existen como sentencia (x++;). Si aparecen después de un
+        operando dentro de una expresión se reporta un error claro y se consumen,
+        para continuar el análisis sin errores en cascada."""
+        if self._current_is(TokenType.OP_INCREMENT, TokenType.OP_DECREMENT):
+            tok = self._advance()
+            self._errors.append(
+                f"Error sintáctico en línea {tok.line}, col {tok.column}: "
+                f"'{tok.value}' solo puede usarse como sentencia (x{tok.value};), "
+                f"no dentro de una expresión"
+            )
 
     def _parse_componente(self) -> ASTNode:
         tok = self._current()
