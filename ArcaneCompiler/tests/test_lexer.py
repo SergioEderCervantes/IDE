@@ -149,5 +149,14 @@ class TestDigitosAscii(unittest.TestCase):
         self.assertEqual([int(tokens[0].value), float(tokens[1].value), int(tokens[2].value)], [123, 4.56, 7])
 
 
+
+class TestEspaciosLargos(unittest.TestCase):
+    def test_muchos_espacios_seguidos(self):
+        """Antes cada espacio era una llamada recursiva: ~1000 seguidos desbordaban la pila."""
+        tokens, errors = Lexer("main {" + " \n\t" * 20000 + "}").tokenize()
+        self.assertEqual([t.value for t in tokens], ["main", "{", "}"])
+        self.assertEqual(tokens[2].line, 20001)
+
+
 if __name__ == "__main__":
     unittest.main()

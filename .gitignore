@@ -9,3 +9,6 @@ dist/
 build/
 # Material de la materia (no versionar)
 CompiladoresII_*.pdf
+
+# Entregables de las fases (no versionar)
+entrega/

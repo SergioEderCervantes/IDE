@@ -164,6 +164,19 @@ estructura del árbol ya expresa la agrupación).
 Tipos posibles: `int`, `float`, `bool` y el tipo interno `error`, que se asigna a una
 expresión con error para no reportar errores en cascada.
 
+**Tamaño de los tipos:**
+
+| Tipo | Representación | Rango |
+|---|---|---|
+| `int` | Entero de 32 bits con signo (como en C y Java) | −2 147 483 648 a 2 147 483 647 |
+| `float` | Real de doble precisión (64 bits, IEEE 754) | ±1.8 × 10³⁰⁸ aprox., 15–16 dígitos significativos |
+| `bool` | `true` / `false` | — |
+
+Un literal entero fuera de rango y una expresión constante entera que se desborda son errores
+semánticos. Como el lexer lee `-2147483648` como `-` aplicado a `2147483648`, ese literal se
+acepta cuando va precedido de un menos unario. Una expresión constante real cuyo resultado no
+es finito (se desborda a infinito) no recibe `valor`.
+
 ---
 
 ## 7. Reglas semánticas por producción
@@ -186,7 +199,7 @@ lista de errores de la sección 9.
 | `repeticion → do … until expresion` | `expresion.tipo` debe ser `bool` → si no, **#7** |
 | `sent_in → cin >> IDENTIFIER ;` | `lookup(id)` debe existir → si no, **#1** |
 | `sent_out → cout << salida ;` | Cada expresión de `salida` debe tener un tipo válido; las cadenas no se verifican |
-| `componente → INTEGER \| REAL` | `tipo = int \| float`; `valor` = el número |
+| `componente → INTEGER \| REAL` | `tipo = int \| float`; `valor` = el número. Fuera del rango del tipo → error (constante fuera de rango) |
 | `componente → true \| false` | `tipo = bool`; `valor` = verdadero / falso |
 | `componente → IDENTIFIER` | `tipo = lookup(id).tipo` (si no existe → **#1** y `tipo = error`); se registra la línea como referencia. Sin `valor` |
 | `componente → ( expresion )` | `tipo` y `valor` de la expresión |
@@ -212,7 +225,7 @@ AST anotado con un nodo explícito `CONV int→float` sobre el operando converti
 | `+ - * /` | algún `bool` | `error` | **#5** |
 | `/` | `int, int` | `int`, división **truncada** como en C (`1 / 3` = 0) | divisor constante 0 → división entre cero |
 | `%` | `int, int` | `int` | `float` o `bool` → **#5**; divisor constante 0 → división entre cero |
-| `^` | `int, int` / algún `float` | `int` / `float` | algún `bool` → **#5** |
+| `^` | `int, int` / algún `float` | `int` / `float` | algún `bool` → **#5**; `int ^` exponente constante negativo → error; `0.0 ^` exponente negativo → división entre cero |
 | `-` unario | `int` / `float` | mismo tipo | `bool` → **#5** |
 | `< <= > >=` | dos números (con `CONV` si se mezclan) | `bool` | algún `bool` → **#5** |
 | `== !=` | dos números, o dos `bool` | `bool` | número con `bool` → **#3** |
@@ -224,6 +237,9 @@ AST anotado con un nodo explícito `CONV int→float` sobre el operando converti
 | Asignación | `bool ←` número, o número `← bool` | — | **#3** / **#6** |
 
 Si un operando ya tiene tipo `error`, el resultado es `error` sin reportar un nuevo error.
+
+En toda operación entera constante, un resultado fuera del rango de `int` es un error de
+desbordamiento (por ejemplo `2147483647 + 1` o `2 ^ 31`).
 
 ---
 
@@ -238,10 +254,17 @@ Si un operando ya tiene tipo `error`, el resultado es `error` sin reportar un nu
 | 5 | Uso indebido de un operador según el tipo de sus operandos | `activo + 1`, `a % 2.0`, `!x` (con `x` int) |
 | 6 | Inconsistencia de tipos en asignaciones y expresiones | `activo = 3;` |
 | 7 | Condición no booleana | `if x then …` (con `x` int) |
-| — | División entre cero con divisor constante | `x = 5 / 0;` |
+| — | División entre cero con divisor constante | `x = 5 / 0;`, `f = 0.0 ^ -1;` |
 | — | Asignación sin expresión | `x = ;` |
+| — | Exponente negativo en una potencia entera | `x = 2 ^ -1;` |
+| — | Constante fuera de rango | `x = 3000000000;` |
+| — | Desbordamiento en expresión constante | `x = 2147483647 + 1;` |
 
 Cada error se reporta con línea, columna y una descripción.
+
+Si un programa tiene expresiones anidadas tan profundas que el análisis no puede procesarlas
+(más de ~500 paréntesis anidados o expresiones de más de ~1000 términos), se reporta un error
+en lugar de detener el compilador.
 
 ---
 

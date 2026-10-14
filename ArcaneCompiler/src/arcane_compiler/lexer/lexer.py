@@ -67,15 +67,14 @@ class Lexer:
         return ch
 
     def _next_token(self) -> Token | None:
+        # 1. Whitespace (con un ciclo: la recursión se desbordaba con ~1000 espacios seguidos)
+        while self._peek() in (" ", "\t", "\r", "\n"):
+            self._advance()
+
         if self._pos >= len(self._source):
             return None
 
         ch = self._peek()
-
-        # 1. Whitespace
-        if ch in (" ", "\t", "\r", "\n"):
-            self._advance()
-            return self._next_token()
 
         start_line = self._line
         start_col = self._col

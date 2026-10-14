@@ -2,6 +2,7 @@ import re
 import sys
 import json as _json
 import locale
+from typing import Optional
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
@@ -31,8 +32,10 @@ class CompilerRunner(QObject):
         self.process.finished.connect(self._handle_finished)
         self.process.errorOccurred.connect(self._handle_process_error)
 
-        self._output_buffer = ""
-        self._error_buffer = ""
+        # La salida se acumula en bytes y se decodifica al terminar: los pedazos que entrega
+        # QProcess pueden cortar un carácter UTF-8 (á, ←, ✓) a la mitad
+        self._stdout = bytearray()
+        self._stderr = bytearray()
         self._encodings = ["utf-8", locale.getpreferredencoding(False), "cp1252", "latin-1"]
 
     def _decode_process_output(self, data: bytes) -> str:
@@ -52,23 +55,17 @@ class CompilerRunner(QObject):
         if self.is_running():
             return
         self.compilation_started.emit()
-        self._output_buffer = ""
-        self._error_buffer = ""
-        
-        # Se ejecuta como módulo con el mismo Python del IDE. Buscar el script
-        # arcane-compiler junto a python.exe solo funciona dentro de un entorno virtual:
-        # en una instalación global de Windows los scripts quedan en la subcarpeta Scripts\.
+        self._stdout = bytearray()
+        self._stderr = bytearray()
         self.process.start(sys.executable, ["-m", "arcane_compiler.main", source_file, phase])
 
     def _handle_stdout(self):
-        """Maneja el buffer de output normal"""
-        data = bytes(self.process.readAllStandardOutput())      # type: ignore
-        self._output_buffer += self._decode_process_output(data)
+        """Acumula la salida normal"""
+        self._stdout += bytes(self.process.readAllStandardOutput())      # type: ignore
 
     def _handle_stderr(self):
-        """Maneja el buffer de output de error"""
-        data = bytes(self.process.readAllStandardError())       # type: ignore
-        self._error_buffer += self._decode_process_output(data)
+        """Acumula la salida de error"""
+        self._stderr += bytes(self.process.readAllStandardError())       # type: ignore
 
     def _handle_process_error(self, error: QProcess.ProcessError):
         """Si el proceso ni siquiera arranca, Qt no emite finished: se avisa aquí."""
@@ -80,46 +77,66 @@ class CompilerRunner(QObject):
 
     def _handle_finished(self):
         """Callback que se ejecuta cuando el proceso termina, manda las señales con el output parseado"""
+        salida = self._decode_process_output(bytes(self._stdout))
+        errores = self._decode_process_output(bytes(self._stderr))
+
         # Código distinto de 0 = invocación inválida o falla interna del compilador.
         # Los errores del programa fuente salen con código 0 dentro de la sección ERRORES.
         if self.process.exitStatus() != QProcess.ExitStatus.NormalExit or self.process.exitCode() != 0:
             error_message = (
-                self._error_buffer.strip()
-                or self._output_buffer.strip()
+                errores.strip()
+                or salida.strip()
                 or f"El compilador terminó inesperadamente (código {self.process.exitCode()})."
             )
             self.compilation_error.emit(error_message)
-        else:
-            results = self._parse_output(self._output_buffer)
-            self.compilation_finished.emit(results)
+            return
 
-    def _parse_output(self, output: str) -> dict:
+        results = self._parse_output(salida)
+        if results is None:
+            inicio = (salida.strip() or errores.strip() or "(sin salida)")[:500]
+            self.compilation_error.emit(
+                "La salida del compilador no es válida (falta la sección ERRORES o no tiene el "
+                f"formato esperado).\n\nInicio de la salida:\n{inicio}"
+            )
+            return
+
+        ast = results.pop("_ast", None)
+        if ast:  # mostrar el árbol aunque haya errores sintácticos
+            self.ast_ready.emit(ast)
+        self.compilation_finished.emit(results)
+
+    def _parse_output(self, output: str) -> Optional[dict]:
         """
         Parsea el output por secciones
         Formato: ===SECTION_NAME===...content...===END_SECTION_NAME===
+
+        Devuelve None si la salida no cumple el protocolo (ERRORES ausente o malformado).
+        Las secciones JSON opcionales con un formato inesperado se tratan como ausentes.
         """
-        results = {}
+        results: dict = {}
         pattern = re.compile(r"""===(?P<name>\w+)===\r?\n(?P<content>.*?)===END_(?P=name)===""", re.DOTALL)
-        
+
         for match in pattern.finditer(output):
             name = match.group('name').lower()
             content = match.group('content').strip()
             results[name] = content
 
-        if results.get("sintactico"):
-            try:
-                data = _json.loads(results["sintactico"])
-                if data.get("ast"):  # mostrar árbol aunque haya errores sintácticos
-                    self.ast_ready.emit(data["ast"])
-            except (ValueError, KeyError):
-                pass
+        errores = _json_o_none(results.get("errores"))
+        if not _errores_validos(errores):
+            return None
+        results["errores"] = errores
 
-        # Secciones JSON: se entregan ya parseadas (None si la fase no se ejecutó)
-        for seccion in ("errores", "semantico", "tabla_simbolos"):
-            try:
-                results[seccion] = _json.loads(results.get(seccion) or "null")
-            except ValueError:
-                results[seccion] = None
+        sintactico = _json_o_none(results.get("sintactico"))
+        if isinstance(sintactico, dict) and isinstance(sintactico.get("ast"), dict):
+            results["_ast"] = sintactico["ast"]
+
+        semantico = _json_o_none(results.get("semantico"))
+        results["semantico"] = (
+            semantico if isinstance(semantico, dict) and _lista_de_dicts(semantico.get("recorrido", []))
+            else None
+        )
+        tabla = _json_o_none(results.get("tabla_simbolos"))
+        results["tabla_simbolos"] = tabla if _lista_de_dicts(tabla) else None
 
         return results
 
@@ -138,3 +155,27 @@ class CompilerRunner(QObject):
 
     def run_execution(self, source_file: str) -> None:
         self._run_compiler(source_file, "execution")
+
+
+def _json_o_none(texto: Optional[str]):
+    """JSON de una sección, o None si está vacía o no es JSON válido."""
+    try:
+        return _json.loads(texto or "null")
+    except ValueError:
+        return None
+
+
+def _lista_de_dicts(valor) -> bool:
+    return isinstance(valor, list) and all(isinstance(x, dict) for x in valor)
+
+
+def _errores_validos(errores) -> bool:
+    """ERRORES = {lexico, sintactico, semantico: list[dict] | None, avisos: list[str]}."""
+    if not isinstance(errores, dict):
+        return False
+    for fase in ("lexico", "sintactico", "semantico"):
+        lista = errores.get(fase)
+        if lista is not None and not _lista_de_dicts(lista):
+            return False
+    avisos = errores.get("avisos", [])
+    return isinstance(avisos, list) and all(isinstance(a, str) for a in avisos)

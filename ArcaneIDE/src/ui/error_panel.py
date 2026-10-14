@@ -1,7 +1,8 @@
 from typing import Optional
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget
 from .data_table import DataTable
+from .paleta import paleta
 
 # (llave en el JSON de ERRORES, título de la sub-pestaña)
 _FASES = [
@@ -9,9 +10,6 @@ _FASES = [
     ("sintactico", "Sintácticos"),
     ("semantico", "Semánticos"),
 ]
-
-_COLOR_AVISO = "#e5a50a"
-_COLOR_FALLA = "#e64553"
 
 
 class ErrorPanel(QWidget):
@@ -23,10 +21,18 @@ class ErrorPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._paleta = paleta(tema_claro=False)
 
+        # Avisos del pipeline (una o dos líneas)
         self._mensaje = QLabel()
         self._mensaje.setWordWrap(True)
         self._mensaje.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        # Falla del compilador: puede ser un traceback largo, así que va en un área con
+        # scroll y altura limitada para no desplazar el resto de la ventana
+        self._falla = QPlainTextEdit()
+        self._falla.setReadOnly(True)
+        self._falla.setMaximumHeight(160)
 
         self._fases = QTabWidget()
         self._tablas: dict[str, DataTable] = {}
@@ -38,9 +44,14 @@ class ErrorPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._mensaje)
+        layout.addWidget(self._falla)
         layout.addWidget(self._fases)
 
         self.clear()
+
+    def set_tema_claro(self, tema_claro: bool) -> None:
+        self._paleta = paleta(tema_claro)
+        self._aplicar_colores()
 
     def set_errors(self, data: Optional[dict]) -> int:
         """Llena las tablas con el JSON de la sección ERRORES. Devuelve el total de errores."""
@@ -64,21 +75,28 @@ class ErrorPanel(QWidget):
 
         if primera_con_errores is not None:
             self._fases.setCurrentIndex(primera_con_errores)
-        self._show_message("\n".join(data.get("avisos") or []), _COLOR_AVISO)
+        self._mensaje.setText("\n".join(data.get("avisos") or []))
+        self._mensaje.setVisible(bool(self._mensaje.text()))
         return total
 
     def show_failure(self, message: str) -> None:
         """Falla del compilador en sí (no del programa fuente)."""
         self.clear()
-        self._show_message(f"Error del compilador:\n{message}", _COLOR_FALLA)
+        self._falla.setPlainText(f"Error del compilador:\n{message}")
+        self._falla.setVisible(True)
+        # La última línea de un traceback es la que dice qué falló
+        self._falla.verticalScrollBar().setValue(self._falla.verticalScrollBar().maximum())  # type: ignore
 
     def clear(self) -> None:
         for i, (key, titulo) in enumerate(_FASES):
             self._tablas[key].clear()
             self._fases.setTabText(i, f"{titulo} (—)")
-        self._show_message("", None)
+        self._mensaje.clear()
+        self._mensaje.setVisible(False)
+        self._falla.clear()
+        self._falla.setVisible(False)
+        self._aplicar_colores()
 
-    def _show_message(self, text: str, color: Optional[str]) -> None:
-        self._mensaje.setText(text)
-        self._mensaje.setStyleSheet(f"color: {color}; padding: 4px;" if color else "")
-        self._mensaje.setVisible(bool(text))
+    def _aplicar_colores(self) -> None:
+        self._mensaje.setStyleSheet(f"color: {self._paleta['aviso']}; padding: 4px;")
+        self._falla.setStyleSheet(f"color: {self._paleta['falla']};")

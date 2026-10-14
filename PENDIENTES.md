@@ -7,7 +7,6 @@ y queda para después. Los tiempos son estimados de implementación y prueba.
 
 | Pendiente | Cuándo se nota | Tiempo |
 |---|---|---|
-| **Recursión del lexer**: ~1000 espacios o saltos de línea seguidos provocan `RecursionError` (también tumba el resaltado del editor). Cambiar la recursión de `_next_token` por un ciclo | Muy raro | 5–10 min |
 | **Colores desfasados con acentos o ñ** en el editor: `arcane_lexer.py` mezcla posiciones en caracteres con posiciones en bytes UTF-8 | Comentarios o cadenas con acentos | 20–30 min |
 | **Token suelto corta el programa**: `main { x = 1; 5; y = 2; }` pierde `y = 2` y da errores en cascada (también `x = a ++ b;`). `_parse_lista_declaracion` sale del ciclo con el primer token fuera de FIRST | Solo programas con errores sintácticos | 30–45 min |
 | **IDE desde el `.exe`**: busca `arcane-compiler` junto a `sys.executable`, que en PyInstaller es `main.exe`. Hoy muestra un error claro, pero no compila | Solo si se usa el `.exe` | 30–60 min |

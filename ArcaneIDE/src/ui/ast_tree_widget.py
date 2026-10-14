@@ -1,8 +1,10 @@
 from PyQt6.QtWidgets import (
     QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
 )
+from typing import Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor
+from .paleta import paleta
 
 
 _LEAF_KINDS = {
@@ -21,9 +23,6 @@ _LEAF_KINDS = {
 
 # Orden en que se muestran los atributos semánticos
 _ORDEN_ATRIBUTOS = ["dtype", "tipo", "valor", "dir", "verificacion"]
-
-_COLOR_ERROR = "#f38ba8"
-_COLOR_CONVERSION = "#e5a50a"
 
 
 class _ColorDelegate(QStyledItemDelegate):
@@ -44,6 +43,9 @@ class _ColorDelegate(QStyledItemDelegate):
         widget = opt.widget
         style = widget.style() if widget else QApplication.style()
         rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, opt, widget)
+        # Mismo margen horizontal que Qt aplica al texto de las filas normales
+        margen = style.pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, None, widget) + 1
+        rect = rect.adjusted(margen, 0, -margen, 0)
         texto = opt.text
         opt.text = ""
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
@@ -75,12 +77,25 @@ class ASTTreeWidget(QTreeWidget):
             self.setHeaderLabel(titulo)
         self.setMinimumWidth(400)
         self.setItemDelegate(_ColorDelegate(self))
+        self._paleta = paleta(tema_claro=False)
+        self._ultimo_ast: Optional[dict] = None
+
+    def set_tema_claro(self, tema_claro: bool) -> None:
+        """Cambia la paleta de resaltado y redibuja el árbol actual con ella."""
+        self._paleta = paleta(tema_claro)
+        if self._ultimo_ast:
+            self.populate(self._ultimo_ast)
+
+    def clear(self) -> None:
+        self._ultimo_ast = None
+        super().clear()
 
     def populate(self, ast_dict: dict) -> None:
         """Puebla el árbol con el AST y lo expande completamente."""
         self.clear()
         if not ast_dict:
             return
+        self._ultimo_ast = ast_dict
         root_item = self._build_item(ast_dict)
         self.addTopLevelItem(root_item)
         self.expandAll()
@@ -99,7 +114,7 @@ class ASTTreeWidget(QTreeWidget):
         if kind == "error":
             # El mensaje ya incluye línea y columna
             item = QTreeWidgetItem([f"⚠ {value}"])
-            item.setForeground(0, QBrush(QColor(_COLOR_ERROR)))
+            item.setForeground(0, QBrush(QColor(self._paleta["error"])))
             return item
 
         if kind in _LEAF_KINDS and value is not None:
@@ -116,10 +131,10 @@ class ASTTreeWidget(QTreeWidget):
         if self._con_atributos:
             attrs = node.get("attrs") or {}
             item = QTreeWidgetItem([label, _formato_atributos(attrs)])
-            color = _color_de(kind, attrs)
-            if color:
+            resaltado = _resaltado_de(kind, attrs)
+            if resaltado:
                 for columna in (0, 1):
-                    item.setForeground(columna, QBrush(QColor(color)))
+                    item.setForeground(columna, QBrush(QColor(self._paleta[resaltado])))
         else:
             item = QTreeWidgetItem([label])
 
@@ -140,9 +155,10 @@ def _formato_atributos(attrs: dict) -> str:
     return "  ·  ".join(partes)
 
 
-def _color_de(kind: str, attrs: dict):
+def _resaltado_de(kind: str, attrs: dict) -> Optional[str]:
+    """Llave de la paleta con que se resalta el nodo, o None."""
     if attrs.get("tipo") == "error" or "✗" in str(attrs.get("verificacion", "")):
-        return _COLOR_ERROR
+        return "error"
     if kind == "CONV":
-        return _COLOR_CONVERSION
+        return "conversion"
     return None

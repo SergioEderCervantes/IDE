@@ -5,7 +5,7 @@ from arcane_compiler.main import compile_source
 from arcane_compiler.parser.ast_nodes import ASTNode
 from arcane_compiler.semantic.analyzer import SemanticAnalyzer
 from arcane_compiler.semantic.constantes import (
-    DivisionEntreCero, ExponenteNegativo, evaluar_binaria,
+    INT_MAX, INT_MIN, ErrorConstante, evaluar_binaria, valor_literal,
 )
 from arcane_compiler.semantic.symbol_table import SymbolTable
 from arcane_compiler.semantic.tipos import (
@@ -226,20 +226,47 @@ def _lanza(fn, excepcion) -> bool:
 # ─── constantes.py ───────────────────────────────────────────────────────────
 
 def test_division_y_residuo_enteros_como_c():
-    assert evaluar_binaria("OP_DIVIDE", 7, 2, INT) == 3
-    assert evaluar_binaria("OP_DIVIDE", -7, 2, INT) == -3
-    assert evaluar_binaria("OP_MODULO", -7, 2, INT) == -1
-    assert evaluar_binaria("OP_MODULO", 7, -2, INT) == 1
-    assert evaluar_binaria("OP_DIVIDE", 7.0, 2.0, FLOAT) == 3.5
+    assert evaluar_binaria("OP_DIVIDE", "/", 7, 2, INT) == 3
+    assert evaluar_binaria("OP_DIVIDE", "/", -7, 2, INT) == -3
+    assert evaluar_binaria("OP_MODULO", "%", -7, 2, INT) == -1
+    assert evaluar_binaria("OP_MODULO", "%", 7, -2, INT) == 1
+    assert evaluar_binaria("OP_DIVIDE", "/", 7.0, 2.0, FLOAT) == 3.5
 
 
 def test_constantes_invalidas():
-    assert _lanza(lambda: evaluar_binaria("OP_DIVIDE", 1, 0, INT), DivisionEntreCero)
-    assert _lanza(lambda: evaluar_binaria("OP_MODULO", 1, 0, INT), DivisionEntreCero)
-    assert _lanza(lambda: evaluar_binaria("OP_POWER", 2, -1, INT), ExponenteNegativo)
-    assert evaluar_binaria("OP_POWER", 2.0, -1, FLOAT) == 0.5
-    assert evaluar_binaria("OP_POWER", -8.0, 0.5, FLOAT) is None  # no es un número real
-    assert evaluar_binaria("OP_POWER", 2, 100000, INT) is None    # demasiado grande
+    assert _lanza(lambda: evaluar_binaria("OP_DIVIDE", "/", 1, 0, INT), ErrorConstante)
+    assert _lanza(lambda: evaluar_binaria("OP_MODULO", "%", 1, 0, INT), ErrorConstante)
+    assert _lanza(lambda: evaluar_binaria("OP_POWER", "^", 2, -1, INT), ErrorConstante)
+    assert _lanza(lambda: evaluar_binaria("OP_POWER", "^", 0.0, -1.0, FLOAT), ErrorConstante)
+    assert evaluar_binaria("OP_POWER", "^", 2.0, -1.0, FLOAT) == 0.5
+    assert evaluar_binaria("OP_POWER", "^", -8.0, 0.5, FLOAT) is None  # no es un número real
+    assert evaluar_binaria("OP_POWER", "^", 10.0, 400.0, FLOAT) is None  # no cabe en float
+    assert evaluar_binaria("OP_MULTIPLY", "*", 1e300, 1e300, FLOAT) is None  # infinito
+
+
+def test_int_es_de_32_bits():
+    assert (INT_MIN, INT_MAX) == (-2147483648, 2147483647)
+    assert evaluar_binaria("OP_PLUS", "+", INT_MAX - 1, 1, INT) == INT_MAX
+    assert evaluar_binaria("OP_POWER", "^", 2, 30, INT) == 2 ** 30
+    for op, s, a, b in [("OP_PLUS", "+", INT_MAX, 1), ("OP_MINUS", "-", INT_MIN, 1),
+                        ("OP_MULTIPLY", "*", 46341, 46341), ("OP_POWER", "^", 2, 31),
+                        ("OP_DIVIDE", "/", INT_MIN, -1)]:
+        assert _lanza(lambda: evaluar_binaria(op, s, a, b, INT), ErrorConstante), (op, a, b)
+
+
+def test_potencia_entera_no_se_cuelga():
+    assert _lanza(lambda: evaluar_binaria("OP_POWER", "^", 3, 10 ** 9, INT), ErrorConstante)
+    assert evaluar_binaria("OP_POWER", "^", 1, 10 ** 9, INT) == 1
+    assert evaluar_binaria("OP_POWER", "^", -1, 10 ** 9 + 1, INT) == -1
+
+
+def test_literales_fuera_de_rango():
+    assert valor_literal("INTEGER", "2147483647") == INT_MAX
+    assert valor_literal("INTEGER", "0002147483647") == INT_MAX
+    assert valor_literal("INTEGER", "2147483648", permitir_minimo=True) == INT_MAX + 1
+    for lexema in ["2147483648", "9" * 5000]:
+        assert _lanza(lambda: valor_literal("INTEGER", lexema), ErrorConstante)
+    assert _lanza(lambda: valor_literal("REAL", "9" * 400 + ".0"), ErrorConstante)
 
 
 # ─── Declaraciones y tabla de símbolos ───────────────────────────────────────
@@ -455,3 +482,37 @@ def test_test_semantica_valores_constantes():
         7: 4, 10: 61.0, 11: 8, 12: -2, 13: 64, 27: 7,
     }
     assert valores[8] is None  # z = y + 7 depende de una variable
+
+
+# ─── int de 32 bits y números extremos (auditoría) ───────────────────────────
+
+def test_limites_de_int_en_programas():
+    assert _expr("main { int x; x = 2147483647; }").attrs["valor"] == INT_MAX
+    assert _expr("main { int x; x = -2147483648; }").attrs["valor"] == INT_MIN
+    assert _errores("main { int x; x = 2147483648; }") == [
+        "constante entera fuera de rango: 2147483648 no cabe en int (32 bits, máximo 2147483647)",
+    ]
+    assert "desbordamiento" in _errores("main { int x; x = - -2147483648; }")[0]
+    assert "desbordamiento" in _errores("main { int x; x = 2147483647 + 1; }")[0]
+
+
+def test_numeros_enormes_no_truenan():
+    """Antes: OverflowError al convertir a float, ValueError con más de 4300 dígitos y
+    cálculos que nunca terminaban."""
+    casos = {
+        "main { float f; f = 10 ^ 309; }": "desbordamiento",
+        "main { int x; cout << 99999 ^ 1000; }": "desbordamiento",
+        "main { int x; x = ((3 ^ 1000) ^ 1000) ^ 1000; }": "desbordamiento",
+        "main { float f; f = " + "9" * 5000 + "; }": "constante entera fuera de rango",
+        "main { float f; f = " + "9" * 400 + ".0; }": "constante real fuera de rango",
+        "main { float f; f = 0.0 ^ -1; }": "división entre cero en '^'",
+    }
+    for src, esperado in casos.items():
+        errores = _errores(src)
+        assert len(errores) == 1 and esperado in errores[0], (src[:60], errores)
+
+
+def test_float_no_finito_queda_sin_valor():
+    expr = _expr("main { float f; f = 10.0 ^ 300 * 10.0 ^ 300; }")
+    assert expr.attrs == {"tipo": "float"}  # sin valor: sería infinito
+    assert _errores("main { float f; f = 10.0 ^ 300 * 10.0 ^ 300; }") == []

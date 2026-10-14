@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
         self.compiler_runner = CompilerRunner()
         self.ignore_text_changes = False  # Bandera para ignorar cambios de texto programáticos
         self._result_tab = "tokens"  # Pestaña a mostrar al compilar sin errores
+        self._archivo_compilado = None  # Archivo de la compilación en curso o la última
         
         # Definiciones de tema: (nombre_tema, nombre_mostrado, es_claro)
         self.themes = [
@@ -61,7 +62,7 @@ class MainWindow(QMainWindow):
         self.output_tabs = OutputTabs()
         right_splitter.addWidget(self.editor_widget)
         right_splitter.addWidget(self.output_tabs)
-        right_splitter.setSizes([600, 200])
+        right_splitter.setSizes([450, 350])
 
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.file_tree = FileTree()
@@ -184,6 +185,12 @@ class MainWindow(QMainWindow):
             self.file_manager.new_file()
             self.ignore_text_changes = False
             self.setWindowTitle("ArcaneIDE - Sin título")
+            self._limpiar_resultados()
+
+    def _limpiar_resultados(self):
+        """Quita los resultados de compilación: pertenecían al archivo anterior."""
+        self.output_tabs.clear_all()
+        self.status_bar.showMessage("Listo")
 
     def _close_file(self):
         if not self._prompt_to_save():
@@ -212,6 +219,7 @@ class MainWindow(QMainWindow):
             self.ignore_text_changes = False
             self.file_tree.set_root_path(str(Path(file_path).parent))
             self.setWindowTitle(f"ArcaneIDE - {self.file_manager.get_current_file().name}") # type: ignore
+            self._limpiar_resultados()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo: {e}")
 
@@ -260,28 +268,52 @@ class MainWindow(QMainWindow):
             return
 
         if self.file_manager.is_modified or not self.file_manager.get_current_file():
-            if not self._prompt_to_save():
+            if not self._guardar_para_compilar():
                 return
-        
+
         if not self.file_manager.get_current_file():
              QMessageBox.warning(self, "Sin archivo", "Abre o guarda un archivo antes de compilar.")
              return
 
         self.output_tabs.clear_all()
         self._result_tab = result_tab
-        phase_func(str(self.file_manager.get_current_file()))
+        self._archivo_compilado = self.file_manager.get_current_file()
+        phase_func(str(self._archivo_compilado))
+
+    def _guardar_para_compilar(self) -> bool:
+        """El compilador analiza el archivo guardado en disco, así que hay que guardar antes.
+
+        No se ofrece "descartar": compilaría la versión del disco, distinta de la del editor.
+        """
+        reply = QMessageBox.question(
+            self, "Guardar antes de compilar",
+            "El compilador analiza el archivo guardado. ¿Guardar los cambios y compilar?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        return reply == QMessageBox.StandardButton.Save and self._save_file()
+
+    def _resultado_vigente(self) -> bool:
+        """False si el archivo cambió (se cerró u abrió otro) mientras se compilaba."""
+        return self.file_manager.get_current_file() == self._archivo_compilado
 
     def _handle_compilation_finished(self, results: dict):
+        if not self._resultado_vigente():
+            self.status_bar.showMessage("Se descartó el resultado: el archivo cambió durante la compilación.", 5000)
+            return
+
+        errores = results.get("errores") or {}
+        avisos = errores.get("avisos") or []
+        aviso_semantico = next((a for a in avisos if a.startswith("El análisis semántico")), None)
+
         self.output_tabs.update_tokens(results.get("lexico", ""))
         self.output_tabs.update_ast(results.get("sintactico", ""))
-        self.output_tabs.update_semantic(results.get("semantico"))
+        self.output_tabs.update_semantic(results.get("semantico"), aviso_semantico)
         self.output_tabs.update_intermediate_code(results.get("codigo_intermedio", ""))
         self.output_tabs.update_symbol_table(results.get("tabla_simbolos"))
         self.output_tabs.update_execution(results.get("ejecucion", ""))
 
-        errores = results.get("errores") or {}
         total = self.output_tabs.update_errors(errores)
-        avisos = errores.get("avisos") or []
 
         if total:
             self.status_bar.showMessage(f"Compilación terminada con {total} error(es). Revisa la pestaña Errores.")
@@ -294,11 +326,15 @@ class MainWindow(QMainWindow):
             self.output_tabs.focus_tab(self._result_tab)
 
     def _handle_compilation_error(self, error_msg: str):
+        if not self._resultado_vigente():
+            return
         self.status_bar.showMessage("El compilador no pudo completar la ejecución. Revisa la pestaña Errores.")
         self.output_tabs.show_compiler_failure(error_msg)
         self.output_tabs.focus_tab("errores")
 
     def _on_ast_ready(self, ast_dict: dict) -> None:
+        if not self._resultado_vigente():
+            return
         self.ignore_text_changes = True
         self.output_tabs.set_ast(ast_dict)
         self.ignore_text_changes = False
@@ -367,6 +403,9 @@ class MainWindow(QMainWindow):
         
         # También actualizar el tema del widget del editor
         self.editor_widget.set_theme(theme_id)
+
+        # Colores de resaltado (CONV, errores, avisos) legibles sobre fondo claro u oscuro
+        self.output_tabs.set_tema_claro(is_light)
 
     def closeEvent(self, event):# type: ignore
         if self._prompt_to_save():

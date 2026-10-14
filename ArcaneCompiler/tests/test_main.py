@@ -201,3 +201,32 @@ def test_cli_fase_invalida():
     proc = _run_source("main { }", "magia")
     assert proc.returncode == 1
     assert "Fase inválida" in proc.stderr
+
+
+# ─── Anidamiento profundo (auditoría) ────────────────────────────────────────
+
+def _parentesis(n: int) -> str:
+    return "main { int i; i = " + "(" * n + "1" + ")" * n + "; }"
+
+
+def test_anidamiento_excesivo_es_un_error_y_no_truena():
+    r = compile_source(_parentesis(5000), "semantic")
+    [error] = r.errores[SINTACTICO]
+    assert "anidadas demasiado profundas" in error.mensaje
+    assert any("corrige primero los errores sintácticos" in a for a in r.avisos)
+
+
+def test_cli_soporta_anidamiento_razonable():
+    # La CLI sube el límite de recursión: 300 paréntesis y 800 términos se analizan bien
+    for src in [_parentesis(300), "main { int i; i = " + " + ".join(["1"] * 800) + "; }"]:
+        proc = _run_source(src, "semantic")
+        assert proc.returncode == 0, proc.stderr[-300:]
+        errores = json.loads(_sections(proc.stdout)["ERRORES"])
+        assert errores["sintactico"] == [] and errores["semantico"] == []
+
+
+def test_cli_anidamiento_excesivo():
+    proc = _run_source(_parentesis(5000), "semantic")
+    assert proc.returncode == 0
+    errores = json.loads(_sections(proc.stdout)["ERRORES"])
+    assert "anidadas demasiado profundas" in errores["sintactico"][0]["mensaje"]

@@ -19,7 +19,9 @@ from typing import Optional
 from ..errors import CompilerError, SEMANTICO
 from ..parser.ast_nodes import ASTNode
 from . import tipos
-from .constantes import evaluar_binaria, evaluar_unaria, valor_literal
+from .constantes import (
+    ErrorConstante, error_operando_derecho, evaluar_binaria, evaluar_unaria, valor_literal,
+)
 from .symbol_table import SymbolTable
 from .tipos import Tipo
 
@@ -172,9 +174,7 @@ class SemanticAnalyzer:
     def _expresion(self, node: ASTNode) -> Tipo:
         """Calcula y anota el tipo (y el valor si es constante). Devuelve el tipo."""
         if node.kind in tipos.TIPO_DE_LITERAL:
-            node.attrs["tipo"] = tipos.TIPO_DE_LITERAL[node.kind].value
-            node.attrs["valor"] = valor_literal(node.kind, node.value)
-            return tipos.TIPO_DE_LITERAL[node.kind]
+            return self._literal(node)
 
         if node.kind == "IDENTIFIER":
             return self._identificador(node)
@@ -189,15 +189,33 @@ class SemanticAnalyzer:
         node.attrs["tipo"] = Tipo.ERROR.value
         return Tipo.ERROR
 
+    def _literal(self, node: ASTNode, permitir_minimo: bool = False) -> Tipo:
+        """Literal: tipo según su clase y valor = el literal (si está en el rango del tipo)."""
+        tipo = tipos.TIPO_DE_LITERAL[node.kind]
+        node.attrs["tipo"] = tipo.value
+        try:
+            node.attrs["valor"] = valor_literal(node.kind, node.value, permitir_minimo)
+        except ErrorConstante as e:
+            self._error(node, str(e))
+        return tipo
+
     def _unaria(self, node: ASTNode) -> Tipo:
         operando = node.children[0]
-        t = self._expresion(operando)
+        if node.kind == "OP_NEG" and operando.kind == "INTEGER":
+            t = self._literal(operando, permitir_minimo=True)  # -2147483648
+        else:
+            t = self._expresion(operando)
         r = tipos.operacion_unaria(node.kind, node.value, t)
         if r.error:
             self._error(node, r.error)
         node.attrs["tipo"] = r.tipo.value
         if r.tipo != Tipo.ERROR and "valor" in operando.attrs:
-            node.attrs["valor"] = evaluar_unaria(node.kind, operando.attrs["valor"])
+            try:
+                valor = evaluar_unaria(node.kind, operando.attrs["valor"])
+            except ErrorConstante as e:
+                return self._error_constante(node, str(e))
+            if valor is not None:
+                node.attrs["valor"] = valor
         return r.tipo
 
     def _binaria(self, node: ASTNode) -> Tipo:
@@ -215,27 +233,33 @@ class SemanticAnalyzer:
         if r.tipo == Tipo.ERROR:
             return r.tipo
 
+        # El tipo de los operandos (no el del resultado) decide la aritmética: en
+        # 7 / 2 > 3 la división es entera aunque la comparación dé bool.
+        izq, der = node.children
+        tipo_operandos = Tipo(izq.attrs["tipo"])
+
         # Basta con que el operando derecho sea constante: x / 0 y x ^ -1 se detectan aunque
         # x sea una variable
-        izq, der = node.children
-        divisor_cero = node.kind in ("OP_DIVIDE", "OP_MODULO") and der.attrs.get("valor") == 0
-        exponente_negativo = (node.kind == "OP_POWER" and r.tipo == Tipo.INT
-                              and der.attrs.get("valor", 0) < 0)
-        if divisor_cero or exponente_negativo:
-            self._error(node, f"división entre cero en '{node.value}'" if divisor_cero else
-                        "exponente negativo en una potencia entera: el resultado no es int "
-                        "(usa un operando float, por ejemplo 2.0 ^ -1)")
-            node.attrs["tipo"] = Tipo.ERROR.value
-            return Tipo.ERROR
+        if "valor" in der.attrs:
+            error = error_operando_derecho(node.kind, node.value, tipo_operandos, der.attrs["valor"])
+            if error:
+                return self._error_constante(node, error)
 
         if "valor" in izq.attrs and "valor" in der.attrs:
-            # El tipo de los operandos (no el del resultado) decide la aritmética: en
-            # 7 / 2 > 3 la división es entera aunque la comparación dé bool.
-            valor = evaluar_binaria(node.kind, izq.attrs["valor"], der.attrs["valor"],
-                                    Tipo(izq.attrs["tipo"]))
+            try:
+                valor = evaluar_binaria(node.kind, node.value, izq.attrs["valor"],
+                                        der.attrs["valor"], tipo_operandos)
+            except ErrorConstante as e:
+                return self._error_constante(node, str(e))
             if valor is not None:
                 node.attrs["valor"] = valor
         return r.tipo
+
+    def _error_constante(self, node: ASTNode, mensaje: str) -> Tipo:
+        """Expresión constante inválida (división entre cero, desbordamiento, ...)."""
+        self._error(node, mensaje)
+        node.attrs["tipo"] = Tipo.ERROR.value
+        return Tipo.ERROR
 
     def _identificador(self, ident: ASTNode) -> Tipo:
         """Uso de un identificador: búsqueda en la tabla de símbolos."""

@@ -56,9 +56,10 @@ class OutputTabs(QTabWidget):
         self._ultimo_ast = ast_dict
         self._ast_widget.populate(ast_dict)
 
-    def update_semantic(self, data: Optional[dict]) -> None:
-        """JSON de la sección SEMANTICO ya parseado (None si la fase no se ejecutó)."""
-        self._semantic_view.set_result(self._ultimo_ast, data)
+    def update_semantic(self, data: Optional[dict], aviso: Optional[str] = None) -> None:
+        """JSON de la sección SEMANTICO ya parseado (None si la fase no se ejecutó;
+        en ese caso `aviso` explica por qué)."""
+        self._semantic_view.set_result(self._ultimo_ast, data, aviso)
 
     def update_intermediate_code(self, content: str):
         self.tabs["código_intermedio"].setText(content)
@@ -80,6 +81,12 @@ class OutputTabs(QTabWidget):
 
     def update_execution(self, content: str):
         self.tabs["ejecución"].setText(content)
+
+    def set_tema_claro(self, tema_claro: bool) -> None:
+        """Ajusta los colores de resaltado al brillo del tema."""
+        self._ast_widget.set_tema_claro(tema_claro)
+        self._semantic_view.set_tema_claro(tema_claro)
+        self._error_panel.set_tema_claro(tema_claro)
 
     def clear_all(self):
         """Limpia el contenido de todas las pestañas."""

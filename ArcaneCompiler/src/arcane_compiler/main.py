@@ -30,6 +30,15 @@ from arcane_compiler.utils.output import (
 PHASES = ["lexical", "syntactic", "semantic", "intermediate", "execution"]
 VALID_PHASES = set(PHASES) | {"all"}
 
+# El análisis es recursivo (una llamada por nivel de anidamiento). Con este límite caben
+# ~500 paréntesis anidados o expresiones de ~1000 términos; más allá se reporta este error
+# en lugar de terminar con un traceback.
+_LIMITE_RECURSION = 10_000
+_ANIDAMIENTO_EXCESIVO = (
+    "el programa tiene expresiones anidadas demasiado profundas para analizarse; "
+    "divide la expresión en partes más pequeñas"
+)
+
 # Fases aún no implementadas
 _PHASE_TITLES = {
     "intermediate": "generación de código intermedio",
@@ -77,9 +86,13 @@ def compile_source(source: str, phase: str) -> CompilationResult:
         return result
 
     # ── Fase 2: análisis sintáctico
-    parser = Parser(tokens)
-    result.ast = build_ast(parser.parse())
-    result.errores[SINTACTICO] = parser.diagnostics
+    try:
+        parser = Parser(tokens)
+        result.ast = build_ast(parser.parse())
+        result.errores[SINTACTICO] = parser.diagnostics
+    except RecursionError:
+        result.ast = None
+        result.errores[SINTACTICO] = [CompilerError(SINTACTICO, _ANIDAMIENTO_EXCESIVO)]
 
     if "semantic" not in requested:
         return result
@@ -90,8 +103,12 @@ def compile_source(source: str, phase: str) -> CompilationResult:
         return result
 
     # ── Fase 3: análisis semántico (sobre una copia del AST; result.ast queda sin anotar)
-    result.semantico = SemanticAnalyzer().analyze(result.ast)
-    result.errores[SEMANTICO] = result.semantico.errores
+    try:
+        result.semantico = SemanticAnalyzer().analyze(result.ast)
+        result.errores[SEMANTICO] = result.semantico.errores
+    except RecursionError:
+        result.semantico = None
+        result.errores[SEMANTICO] = [CompilerError(SEMANTICO, _ANIDAMIENTO_EXCESIVO)]
 
     # ── Fases 4 y 5: pendientes de implementar
     if phase in _PHASE_TITLES:
@@ -152,7 +169,13 @@ def main() -> None:
         print(f"El archivo no está en UTF-8: {source_file}", file=sys.stderr)
         sys.exit(1)
 
-    emit_result(compile_source(source, phase))
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), _LIMITE_RECURSION))
+    resultado = compile_source(source, phase)
+    try:
+        emit_result(resultado)
+    except RecursionError:  # el AST cupo en el análisis pero no al convertirlo a JSON
+        print(f"Error: {_ANIDAMIENTO_EXCESIVO}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
