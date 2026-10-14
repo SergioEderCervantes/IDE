@@ -19,7 +19,7 @@ main {
     end
     do
         z = z + 1;
-    while z < 10
+    until z >= 10
     cin >> x;
     cout << "resultado: ";
     cout << x + y;

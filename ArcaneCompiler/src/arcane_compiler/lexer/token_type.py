@@ -14,6 +14,7 @@ class TokenType(Enum):
     KW_ELSE = auto()
     KW_END = auto()
     KW_DO = auto()
+    KW_UNTIL = auto()
     KW_WHILE = auto()
     KW_SWITCH = auto()
     KW_CASE = auto()

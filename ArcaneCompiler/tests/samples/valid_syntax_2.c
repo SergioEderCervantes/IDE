@@ -12,7 +12,7 @@ main {
 
     do
         contador = contador - 1;
-    while contador > 0
+    until contador <= 0
 
     cout << suma;
 }

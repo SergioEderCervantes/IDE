@@ -36,7 +36,7 @@ _MULT_OPS = {
 # Tokens de sincronización para recuperación de errores
 _SYNC_EXPRESION = {TokenType.SYM_SEMICOLON, TokenType.SYM_RPAREN, TokenType.KW_END}
 _SYNC_SENTENCIA = {
-    TokenType.SYM_SEMICOLON, TokenType.KW_END,
+    TokenType.SYM_SEMICOLON, TokenType.KW_END, TokenType.KW_UNTIL,
     TokenType.KW_WHILE, TokenType.KW_IF, TokenType.KW_DO,
     TokenType.KW_CIN, TokenType.KW_COUT,
 }
@@ -152,10 +152,10 @@ class Parser:
         if main_tok:
             node.add(self._make_token_node(main_tok))
 
-        # Acepta main() o main — los paréntesis son opcionales
+        # Acepta main() o main; si se abre '(' debe cerrarse
         if self._current_is(TokenType.SYM_LPAREN):
             self._advance()
-            self._skip_optional(TokenType.SYM_RPAREN)
+            self._expect_node(node, TokenType.SYM_RPAREN, "se esperaba ')'")
 
         self._expect_node(node, TokenType.SYM_LBRACE, "se esperaba '{'")
 
@@ -240,15 +240,14 @@ class Parser:
 
         return node
 
-    def _parse_lista_sentencias(self, stop_tokens: set = None) -> ASTNode:
+    def _parse_lista_sentencias(self) -> ASTNode:
         node = ASTNode(kind="lista_sentencias")
         tok = self._current()
         if tok:
             node.line, node.col = tok.line, tok.column
 
+        # Termina en cualquier token fuera de FIRST(sentencia): end, else, until, }
         while not self._is_at_end() and self._current_is(*_FIRST_SENTENCIA):
-            if stop_tokens and self._current_is(*stop_tokens):
-                break
             sent = self._parse_sentencia()
             if sent:
                 node.add(sent)
@@ -362,8 +361,25 @@ class Parser:
         self._skip_optional(TokenType.SYM_SEMICOLON)  # end; es aceptado
         return node
 
+    def _parse_cuerpo(self, node: ASTNode, terminador: Optional[TokenType] = None,
+                      msg: str = "") -> None:
+        """cuerpo → { lista_sentencias } | lista_sentencias [terminador]
+
+        La decisión es LL(1): si el token actual es '{' el cuerpo va entre llaves;
+        si no, termina con `terminador` (p. ej. 'end'). Si terminador es None, el
+        cuerpo sin llaves lo cierra quien llama (p. ej. 'until' en repeticion).
+        """
+        if self._current_is(TokenType.SYM_LBRACE):
+            self._advance()
+            node.add(self._parse_lista_sentencias())
+            self._expect_node(node, TokenType.SYM_RBRACE, "se esperaba '}'")
+        else:
+            node.add(self._parse_lista_sentencias())
+            if terminador is not None:
+                self._expect_node(node, terminador, msg)
+
     def _parse_iteracion(self) -> ASTNode:
-        """while (expr) { } o while expr lista_sentencias end"""
+        """iteracion → while expresion ( { lista_sentencias } | lista_sentencias end )"""
         node = ASTNode(kind="iteracion")
         tok = self._current()
         if tok:
@@ -371,36 +387,20 @@ class Parser:
 
         self._expect(TokenType.KW_WHILE, "se esperaba 'while'")
 
-        # Paréntesis opcionales alrededor de la condición
-        has_paren = self._current_is(TokenType.SYM_LPAREN)
-        if has_paren:
-            self._advance()
-
+        # Los paréntesis en la condición son agrupación normal: componente → ( expresion )
         try:
             expr = self._parse_expresion()
             node.add(expr)
         except ParseError:
             self._sync_to(_FIRST_SENTENCIA | {TokenType.KW_END, TokenType.SYM_LBRACE})
 
-        if has_paren:
-            self._skip_optional(TokenType.SYM_RPAREN)
-
-        # Cuerpo: llaves { } o lista_sentencias + end
-        if self._current_is(TokenType.SYM_LBRACE):
-            self._advance()
-            body = self._parse_lista_sentencias(stop_tokens={TokenType.SYM_RBRACE})
-            node.add(body)
-            self._expect_node(node, TokenType.SYM_RBRACE, "se esperaba '}'")
-        else:
-            body = self._parse_lista_sentencias()
-            node.add(body)
-            self._expect_node(node, TokenType.KW_END, "se esperaba 'end'")
+        self._parse_cuerpo(node, TokenType.KW_END, "se esperaba 'end'")
 
         self._skip_optional(TokenType.SYM_SEMICOLON)  # }; o end; son aceptados
         return node
 
     def _parse_repeticion(self) -> ASTNode:
-        """do { } while (expr) o do lista_sentencias while expr"""
+        """repeticion → do ( { lista_sentencias } | lista_sentencias ) until expresion"""
         node = ASTNode(kind="repeticion")
         tok = self._current()
         if tok:
@@ -408,22 +408,9 @@ class Parser:
 
         self._expect(TokenType.KW_DO, "se esperaba 'do'")
 
-        # Cuerpo: llaves { } o lista_sentencias (hasta while)
-        if self._current_is(TokenType.SYM_LBRACE):
-            self._advance()
-            body = self._parse_lista_sentencias(stop_tokens={TokenType.SYM_RBRACE})
-            node.add(body)
-            self._expect_node(node, TokenType.SYM_RBRACE, "se esperaba '}'")
-        else:
-            body = self._parse_lista_sentencias(stop_tokens={TokenType.KW_WHILE})
-            node.add(body)
+        self._parse_cuerpo(node)
 
-        self._expect_node(node, TokenType.KW_WHILE, "se esperaba 'while'")
-
-        # Paréntesis opcionales alrededor de la condición
-        has_paren = self._current_is(TokenType.SYM_LPAREN)
-        if has_paren:
-            self._advance()
+        self._expect_node(node, TokenType.KW_UNTIL, "se esperaba 'until'")
 
         try:
             expr = self._parse_expresion()
@@ -431,10 +418,7 @@ class Parser:
         except ParseError:
             self._sync_to(_SYNC_SENTENCIA)
 
-        if has_paren:
-            self._skip_optional(TokenType.SYM_RPAREN)
-
-        self._skip_optional(TokenType.SYM_SEMICOLON)  # do...while(x); es aceptado
+        self._skip_optional(TokenType.SYM_SEMICOLON)  # do ... until x; es aceptado
         return node
 
     def _parse_sent_in(self) -> ASTNode:

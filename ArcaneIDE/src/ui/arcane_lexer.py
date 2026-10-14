@@ -59,6 +59,7 @@ class ArcaneLexer(QsciLexerCustom):
         TokenType.KW_ELSE:        STYLE_KEYWORD,
         TokenType.KW_END:         STYLE_KEYWORD,
         TokenType.KW_DO:          STYLE_KEYWORD,
+        TokenType.KW_UNTIL:       STYLE_KEYWORD,
         TokenType.KW_WHILE:       STYLE_KEYWORD,
         TokenType.KW_SWITCH:      STYLE_KEYWORD,
         TokenType.KW_CASE:        STYLE_KEYWORD,

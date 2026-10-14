@@ -65,9 +65,65 @@ def test_iteracion():
 
 
 def test_repeticion():
-    src = "main { do x = x + 1; while x < 10 }"
+    src = "main { do x = x + 1; until x >= 10 }"
     ast, errors = _parse(src)
     assert errors == []
+
+
+def test_repeticion_con_llaves():
+    src = "main { do { x = x + 1; } until (x >= 10); }"
+    ast, errors = _parse(src)
+    assert errors == []
+
+
+def test_repeticion_falta_until():
+    src = "main { do x = x + 1; }"
+    ast, errors = _parse(src)
+    assert any("until" in e for e in errors)
+
+
+def test_while_anidado_en_do():
+    """Antes era imposible: el 'while' interno se tomaba como cierre del do."""
+    src = """
+    main {
+        do
+            y = y + 1;
+            while x > 7
+                x = x - 1;
+            end
+        until y == 5
+    }
+    """
+    ast, errors = _parse(src)
+    assert errors == [], f"Errores inesperados: {errors}"
+    repeticion = ast.children[-1].children[0]
+    assert repeticion.kind == "repeticion"
+    cuerpo = repeticion.children[0]
+    assert [s.kind for s in cuerpo.children] == ["asignacion", "iteracion"]
+
+
+def test_iteracion_con_llaves_y_parentesis():
+    src = "main { while (x > 7) { x = x - 1; } }"
+    ast, errors = _parse(src)
+    assert errors == []
+
+
+def test_iteracion_condicion_con_grupos():
+    """Los paréntesis son agrupación normal, no delimitan toda la condición."""
+    src = "main { while (x > 0) && (y > 0) x = x - 1; end }"
+    ast, errors = _parse(src)
+    assert errors == []
+
+
+def test_iteracion_falta_parentesis_cierre():
+    src = "main { while (x > 7 { x = 1; } }"
+    ast, errors = _parse(src)
+    assert any("')'" in e for e in errors)
+
+
+def test_main_falta_parentesis_cierre():
+    ast, errors = _parse("main( { x = 1; }")
+    assert any("')'" in e for e in errors)
 
 
 def test_sent_in():
@@ -155,7 +211,7 @@ def test_programa_with_all_constructs():
         end
         do
             y = y + 1;
-        while y < 10
+        until y >= 10
         cout << z;
     }
     """

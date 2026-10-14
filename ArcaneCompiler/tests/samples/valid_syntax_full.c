@@ -33,7 +33,7 @@ main {
 
     do
         y = y + 1;
-    while y < 10
+    until y >= 10
 
     if !encontrado then
         cout << "no encontrado";

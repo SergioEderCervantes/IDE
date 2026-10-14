@@ -6,6 +6,7 @@ RESERVED: dict[str, TokenType] = {
     "else": TokenType.KW_ELSE,
     "end": TokenType.KW_END,
     "do": TokenType.KW_DO,
+    "until": TokenType.KW_UNTIL,
     "while": TokenType.KW_WHILE,
     "switch": TokenType.KW_SWITCH,
     "case": TokenType.KW_CASE,

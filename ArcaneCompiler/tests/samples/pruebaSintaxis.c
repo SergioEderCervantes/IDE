@@ -37,7 +37,7 @@ do {
       mas=36/7;
    };
 
-} while(y==5);
+} until(y!=5);
 
 while(y==0){
     cin >> mas;
