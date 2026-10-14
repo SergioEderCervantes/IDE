@@ -2,7 +2,6 @@ import re
 import sys
 import json as _json
 import locale
-from pathlib import Path
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 class CompilerRunner(QObject):
@@ -56,8 +55,10 @@ class CompilerRunner(QObject):
         self._output_buffer = ""
         self._error_buffer = ""
         
-        _compiler_bin = Path(sys.executable).parent / "arcane-compiler"
-        self.process.start(str(_compiler_bin), [source_file, phase])
+        # Se ejecuta como módulo con el mismo Python del IDE. Buscar el script
+        # arcane-compiler junto a python.exe solo funciona dentro de un entorno virtual:
+        # en una instalación global de Windows los scripts quedan en la subcarpeta Scripts\.
+        self.process.start(sys.executable, ["-m", "arcane_compiler.main", source_file, phase])
 
     def _handle_stdout(self):
         """Maneja el buffer de output normal"""
@@ -73,7 +74,7 @@ class CompilerRunner(QObject):
         """Si el proceso ni siquiera arranca, Qt no emite finished: se avisa aquí."""
         if error == QProcess.ProcessError.FailedToStart:
             self.compilation_error.emit(
-                f"No se pudo iniciar el compilador ({self.process.program()}).\n"
+                f"No se pudo iniciar el compilador ({self.process.program()} -m arcane_compiler.main).\n"
                 "Verifica que 'arcane-compiler' esté instalado en el mismo entorno que el IDE."
             )
 
