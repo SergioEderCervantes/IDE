@@ -3,8 +3,11 @@ from .ast_nodes import ASTNode
 
 # Nodos que en el CST contienen [operando, op, operando, op, ...] y se convierten en árbol binario
 _BINARY_CONTAINERS = {
-    "expresion", "comparacion", "expresion_simple", "termino", "factor",
+    "expresion", "conjuncion", "comparacion", "expresion_simple", "termino", "factor",
 }
+
+# Contenedores cuyo operador asocia a la derecha: 2 ^ 3 ^ 2 == 2 ^ (3 ^ 2)
+_RIGHT_ASSOC_CONTAINERS = {"factor"}
 
 # Tipos de token que son operadores (para detectarlos en el CST original)
 _OPERATOR_KINDS = {
@@ -31,6 +34,21 @@ def _transform(node: dict) -> dict:
         if raw_ops:
             # Transformar cada operando recursivamente
             t_operands = [_transform(c) for c in raw_operands]
+
+            # Construir árbol binario derecha-asociativo
+            if kind in _RIGHT_ASSOC_CONTAINERS and len(t_operands) == len(raw_ops) + 1:
+                result = t_operands[-1]
+                for i in reversed(range(len(raw_ops))):
+                    op = raw_ops[i]
+                    result = {
+                        "kind": op["kind"],
+                        "value": op["value"],
+                        "line": op.get("line"),
+                        "col": op.get("col"),
+                        "children": [t_operands[i], result],
+                    }
+                return result
+
             # Construir árbol binario izquierda-asociativo
             result = t_operands[0]
             for i, op in enumerate(raw_ops):

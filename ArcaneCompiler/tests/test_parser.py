@@ -1,7 +1,9 @@
+import json
 import pytest
 from arcane_compiler.lexer.lexer import Lexer
 from arcane_compiler.parser.parser import Parser
 from arcane_compiler.parser.ast_nodes import ASTNode
+from arcane_compiler.parser.ast_serializer import ast_to_json
 
 
 def _parse(source: str):
@@ -10,6 +12,22 @@ def _parse(source: str):
     parser = Parser(tokens)
     ast = parser.parse()
     return ast, parser.errors
+
+
+def _expr_ast(expr: str) -> dict:
+    """Devuelve el AST (ya transformado) de la expresión en `x = <expr>;`."""
+    ast, errors = _parse(f"main {{ x = {expr}; }}")
+    assert errors == [], f"Errores inesperados: {errors}"
+    data = json.loads(ast_to_json(ast, True, errors))
+    asignacion = data["ast"]["children"][-1]["children"][0]
+    return asignacion["children"][1]
+
+
+def _shape(node: dict) -> str:
+    """Representación compacta con paréntesis: OP(izq, der) o el lexema."""
+    if not node["children"]:
+        return node["value"]
+    return f"{node['value']}(" + ", ".join(_shape(c) for c in node["children"]) + ")"
 
 
 def test_programa_minimo():
@@ -218,3 +236,37 @@ def test_programa_with_all_constructs():
     ast, errors = _parse(src)
     assert errors == [], f"Errores inesperados: {errors}"
     assert ast.kind == "programa"
+
+
+# ─── Precedencia y asociatividad (forma del AST) ─────────────────────────────
+
+def test_and_tiene_mayor_precedencia_que_or():
+    assert _shape(_expr_ast("a || b && c")) == "||(a, &&(b, c))"
+    assert _shape(_expr_ast("a && b || c")) == "||(&&(a, b), c)"
+
+
+def test_and_or_asocian_a_la_izquierda():
+    assert _shape(_expr_ast("a || b || c")) == "||(||(a, b), c)"
+    assert _shape(_expr_ast("a && b && c")) == "&&(&&(a, b), c)"
+
+
+def test_and_or_con_relacionales():
+    assert _shape(_expr_ast("x > 0 || y < 5 && z == 1")) == "||(>(x, 0), &&(<(y, 5), ==(z, 1)))"
+
+
+def test_potencia_asocia_a_la_derecha():
+    assert _shape(_expr_ast("2 ^ 3 ^ 2")) == "^(2, ^(3, 2))"
+
+
+def test_potencia_mayor_precedencia_que_multiplicacion():
+    assert _shape(_expr_ast("2 * 3 ^ 2")) == "*(2, ^(3, 2))"
+
+
+def test_aritmetica_asocia_a_la_izquierda():
+    assert _shape(_expr_ast("8 - 3 - 1")) == "-(-(8, 3), 1)"
+    assert _shape(_expr_ast("8 / 2 * 3")) == "*(/(8, 2), 3)"
+
+
+def test_parentesis_cambian_la_agrupacion():
+    assert _shape(_expr_ast("(a || b) && c")) == "&&(||(a, b), c)"
+    assert _shape(_expr_ast("(2 ^ 3) ^ 2")) == "^(^(2, 3), 2)"

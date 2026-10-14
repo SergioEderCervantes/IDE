@@ -483,8 +483,29 @@ class Parser:
         return node
 
     def _parse_expresion(self) -> ASTNode:
-        """expresion → comparacion [('&&' | '||') comparacion]*"""
+        """expresion → conjuncion { '||' conjuncion }
+
+        '||' tiene menor precedencia que '&&': a || b && c == a || (b && c)
+        """
         node = ASTNode(kind="expresion")
+        tok = self._current()
+        if tok:
+            node.line, node.col = tok.line, tok.column
+
+        left = self._parse_conjuncion()
+        node.add(left)
+
+        while self._current_is(TokenType.OP_OR):
+            op_tok = self._advance()
+            node.add(self._make_token_node(op_tok))
+            right = self._parse_conjuncion()
+            node.add(right)
+
+        return node
+
+    def _parse_conjuncion(self) -> ASTNode:
+        """conjuncion → comparacion { '&&' comparacion }"""
+        node = ASTNode(kind="conjuncion")
         tok = self._current()
         if tok:
             node.line, node.col = tok.line, tok.column
@@ -492,7 +513,7 @@ class Parser:
         left = self._parse_comparacion()
         node.add(left)
 
-        while self._current_is(TokenType.OP_AND, TokenType.OP_OR):
+        while self._current_is(TokenType.OP_AND):
             op_tok = self._advance()
             node.add(self._make_token_node(op_tok))
             right = self._parse_comparacion()
