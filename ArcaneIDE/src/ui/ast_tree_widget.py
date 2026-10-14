@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QBrush, QColor
 
 
 _LEAF_KINDS = {
@@ -40,6 +41,12 @@ class ASTTreeWidget(QTreeWidget):
         value = node.get("value")
         line = node.get("line")
         col = node.get("col")
+
+        if kind == "error":
+            # El mensaje ya incluye línea y columna
+            item = QTreeWidgetItem([f"⚠ {value}"])
+            item.setForeground(0, QBrush(QColor("#f38ba8")))
+            return item
 
         if kind in _LEAF_KINDS and value is not None:
             if line is not None:

@@ -103,7 +103,13 @@ class Parser:
         tok = self._expect(ttype, msg)
         if tok is None:
             err_msg = self._errors[-1] if self._errors else msg
-            parent.add(ASTNode(kind="error", value=err_msg))
+            found = self._current()  # el token que apareció en lugar del esperado
+            parent.add(ASTNode(
+                kind="error",
+                value=err_msg,
+                line=found.line if found else None,
+                col=found.column if found else None,
+            ))
             return False
         return True
 
@@ -218,7 +224,8 @@ class Parser:
             f"se esperaba tipo (int/float/bool)"
         )
         self._errors.append(msg)
-        return ASTNode(kind="error", value=msg, line=tok.line if tok else None)
+        return ASTNode(kind="error", value=msg,
+                       line=tok.line if tok else None, col=tok.column if tok else None)
 
     def _parse_id_list(self) -> ASTNode:
         node = ASTNode(kind="id_list")

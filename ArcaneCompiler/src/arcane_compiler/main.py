@@ -44,6 +44,7 @@ def main() -> None:
     elif phase == "syntactic":
         from arcane_compiler.lexer.lexer import Lexer
         from arcane_compiler.parser.parser import Parser
+        from arcane_compiler.parser.ast_builder import build_ast
         from arcane_compiler.parser.ast_serializer import ast_to_json
 
         source = Path(source_file).read_text(encoding="utf-8")
@@ -65,7 +66,7 @@ def main() -> None:
             sys.exit(1)
 
         parser = Parser(tokens)
-        ast = parser.parse()
+        ast = build_ast(parser.parse())
         parse_errors = parser.errors
         success = len(parse_errors) == 0
 

@@ -3,10 +3,12 @@ import pytest
 from arcane_compiler.lexer.lexer import Lexer
 from arcane_compiler.parser.parser import Parser
 from arcane_compiler.parser.ast_nodes import ASTNode
+from arcane_compiler.parser.ast_builder import build_ast
 from arcane_compiler.parser.ast_serializer import ast_to_json
 
 
 def _parse(source: str):
+    """Devuelve el CST (salida directa del parser) y los errores."""
     lexer = Lexer(source)
     tokens, _ = lexer.tokenize()
     parser = Parser(tokens)
@@ -14,20 +16,30 @@ def _parse(source: str):
     return ast, parser.errors
 
 
-def _expr_ast(expr: str) -> dict:
-    """Devuelve el AST (ya transformado) de la expresión en `x = <expr>;`."""
-    ast, errors = _parse(f"main {{ x = {expr}; }}")
+def _build(source: str):
+    """Devuelve el AST (CST transformado por build_ast) y los errores."""
+    cst, errors = _parse(source)
+    return build_ast(cst), errors
+
+
+def _sentencias(source: str) -> list[ASTNode]:
+    """Hijos de lista_declaracion en el AST de un programa sin errores."""
+    ast, errors = _build(source)
     assert errors == [], f"Errores inesperados: {errors}"
-    data = json.loads(ast_to_json(ast, True, errors))
-    asignacion = data["ast"]["children"][-1]["children"][0]
-    return asignacion["children"][1]
+    return ast.children[-1].children
 
 
-def _shape(node: dict) -> str:
+def _expr_ast(expr: str) -> ASTNode:
+    """Devuelve el AST de la expresión en `x = <expr>;`."""
+    asignacion = _sentencias(f"main {{ x = {expr}; }}")[0]
+    return asignacion.children[1]
+
+
+def _shape(node: ASTNode) -> str:
     """Representación compacta con paréntesis: OP(izq, der) o el lexema."""
-    if not node["children"]:
-        return node["value"]
-    return f"{node['value']}(" + ", ".join(_shape(c) for c in node["children"]) + ")"
+    if not node.children:
+        return node.value
+    return f"{node.value}(" + ", ".join(_shape(c) for c in node.children) + ")"
 
 
 def test_programa_minimo():
@@ -299,3 +311,100 @@ def test_incremento_binario_es_error():
     ast, errors = _parse("main { x = a ++ b; }")
     assert errors, "a ++ b no debe aceptarse"
     assert "'++' solo puede usarse como sentencia" in errors[0]
+
+
+# ─── AST (build_ast): formas estables ────────────────────────────────────────
+
+def _kinds(node: ASTNode) -> list[str]:
+    return [c.kind for c in node.children]
+
+
+def test_ast_programa():
+    ast, errors = _build("main { int x; }")
+    assert errors == []
+    assert ast.kind == "programa"
+    assert _kinds(ast) == ["KW_MAIN", "lista_declaracion"]
+
+
+def test_ast_declaracion_un_id_conserva_id_list():
+    decl = _sentencias("main { int x; }")[0]
+    assert _kinds(decl) == ["KW_INT", "id_list"]
+    assert [c.value for c in decl.children[1].children] == ["x"]
+
+
+def test_ast_declaracion_varios_ids():
+    decl = _sentencias("main { float a, b, c; }")[0]
+    assert _kinds(decl) == ["KW_FLOAT", "id_list"]
+    assert [c.value for c in decl.children[1].children] == ["a", "b", "c"]
+
+
+def test_ast_asignacion_sin_envoltorios():
+    asig = _sentencias("main { x = 2 + 3; }")[0]
+    assert asig.kind == "asignacion"
+    assert _kinds(asig) == ["IDENTIFIER", "OP_PLUS"]
+    assert asig.children[0].line == 1 and asig.children[0].col == 8
+
+
+def test_ast_sent_out_siempre_tiene_salida():
+    s1 = _sentencias('main { cout << "hola"; }')[0]
+    s2 = _sentencias('main { cout << "x = " << x + 1; }')[0]
+    assert _kinds(s1) == ["salida"] and _kinds(s1.children[0]) == ["STRING_LITERAL"]
+    assert _kinds(s2.children[0]) == ["STRING_LITERAL", "OP_PLUS"]
+
+
+def test_ast_sent_in():
+    s = _sentencias("main { cin >> x; }")[0]
+    assert s.kind == "sent_in" and _kinds(s) == ["IDENTIFIER"]
+
+
+def test_ast_not_conserva_lexema():
+    assert _shape(_expr_ast("!a")) == "!(a)"
+    assert _shape(_expr_ast("not a")) == "not(a)"
+    assert _expr_ast("not a").kind == "OP_NOT"
+
+
+def test_ast_estructuras_de_control():
+    sel, it, rep = _sentencias(
+        "main { if a then x = 1; else x = 2; end "
+        "while a x = 1; end "
+        "do x = 1; until a }"
+    )
+    assert _kinds(sel) == ["IDENTIFIER", "lista_sentencias", "else_body"]
+    assert _kinds(it) == ["IDENTIFIER", "lista_sentencias"]
+    assert _kinds(rep) == ["lista_sentencias", "IDENTIFIER"]
+
+
+def test_ast_incremento():
+    s = _sentencias("main { a++; }")[0]
+    assert s.kind == "incremento" and _kinds(s) == ["IDENTIFIER", "OP_INCREMENT"]
+
+
+def test_ast_conserva_error_con_posicion():
+    ast, errors = _build("main { x = 1 }")
+    asig = ast.children[-1].children[0]
+    assert _kinds(asig) == ["IDENTIFIER", "INTEGER", "error"]
+    error = asig.children[-1]
+    assert "';'" in error.value
+    assert (error.line, error.col) == (1, 14)
+
+
+def test_ast_conserva_error_de_parentesis():
+    ast, errors = _build("main { x = (a + b; }")
+    asig = ast.children[-1].children[0]
+    grupo = asig.children[1]
+    assert grupo.kind == "componente_grupo"
+    assert _kinds(grupo) == ["OP_PLUS", "error"]
+
+
+def test_build_ast_no_modifica_el_cst():
+    cst, _ = _parse("main { int x; x = (1 + 2) * 3; }")
+    antes = cst.to_dict()
+    build_ast(cst)
+    assert cst.to_dict() == antes
+
+
+def test_ast_to_json():
+    ast, errors = _build("main { int x; x = 1; }")
+    data = json.loads(ast_to_json(ast, not errors, errors))
+    assert data["success"] is True and data["error_count"] == 0
+    assert data["ast"] == ast.to_dict()
