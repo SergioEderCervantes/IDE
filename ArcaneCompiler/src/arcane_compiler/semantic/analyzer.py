@@ -7,9 +7,18 @@ atributos en `node.attrs`:
   - dtype  (heredado)     tipo declarado, baja de la declaración a cada identificador
   - dir                   dirección asignada en la tabla de símbolos (memloc)
   - tipo   (sintetizado)  tipo de literales, identificadores y expresiones
-  - valor  (sintetizado)  solo en expresiones constantes
+  - valor  (sintetizado)  en expresiones cuyo valor se conoce en compilación
 
 Las conversiones implícitas int → float se insertan como nodos explícitos CONV.
+
+Valores de las variables: el analizador recuerda el último valor conocido de cada
+variable (`self._valores`), así `y = 2 + 3; z = y + 7;` da z = 12 y el valor sube por la
+expresión hasta la asignación. Solo se guarda un valor cuando es seguro en cualquier
+ejecución:
+  - cin >> x, o asignar una expresión sin valor, deja a x sin valor
+  - después de un if/else solo quedan los valores iguales en ambas ramas
+  - en un ciclo, las variables que se asignan en el cuerpo no tienen valor (cambian en
+    cada vuelta)
 """
 from __future__ import annotations
 import copy
@@ -42,6 +51,7 @@ class SemanticAnalyzer:
         self._tabla = SymbolTable()
         self._errores: list[CompilerError] = []
         self._recorrido: list[dict] = []
+        self._valores: dict[str, object] = {}  # nombre → último valor conocido
 
         anotado = copy.deepcopy(ast)
         self._traza(anotado.line, "inicio", "tabla de símbolos vacía, memloc = 0")
@@ -128,6 +138,12 @@ class SemanticAnalyzer:
             node.attrs["verificacion"] = f"{destino} ← {origen} {veredicto}"
             self._traza(node.line, "asignación", f"{ident.value} ({destino}) ← {origen}{valor} {veredicto}")
 
+        # El valor sube de la expresión a la asignación y queda guardado en la variable
+        if destino != Tipo.ERROR and not r.error and "valor" in expr.attrs:
+            self._asignar_valor(node, ident, expr.attrs["valor"])
+        else:
+            self._valores.pop(ident.value, None)
+
     def _incremento(self, node: ASTNode) -> None:
         ident, op = node.children[0], node.children[1]
         t = self._identificador(ident)
@@ -136,19 +152,52 @@ class SemanticAnalyzer:
             self._error(op, r.error)
         node.attrs["tipo"] = r.tipo.value
 
+        actual = self._valores.pop(ident.value, None)
+        if r.error or actual is None:
+            return
+        uno = 1 if t == Tipo.INT else 1.0
+        operador = "OP_PLUS" if op.kind == "OP_INCREMENT" else "OP_MINUS"
+        try:
+            nuevo = evaluar_binaria(operador, op.value, actual, uno, t)
+        except ErrorConstante as e:
+            self._error_constante(node, str(e))
+            return
+        if nuevo is not None:
+            self._asignar_valor(node, ident, nuevo)
+
     def _seleccion(self, node: ASTNode) -> None:
         self._condicion("if", node, node.children[0])
-        for hijo in node.children[1:]:
+        antes = dict(self._valores)
+        self._sentencia(node.children[1])
+        rama_then = self._valores
+        self._valores = dict(antes)
+        for hijo in node.children[2:]:  # else (si lo hay; sin else, la rama es "antes")
             self._sentencia(hijo)
+        # Solo se conserva el valor de las variables que valen lo mismo en ambas ramas
+        self._valores = {
+            nombre: v for nombre, v in rama_then.items()
+            if nombre in self._valores and _mismo_valor(v, self._valores[nombre])
+        }
 
     def _iteracion(self, node: ASTNode) -> None:
+        self._olvidar_en_ciclo(node, node.children[1])
+        al_evaluar_condicion = dict(self._valores)
         self._condicion("while", node, node.children[0])
         self._sentencia(node.children[1])
+        # Se sale del ciclo cuando la condición es falsa: mismo estado que al evaluarla
+        self._valores = al_evaluar_condicion
 
     def _repeticion(self, node: ASTNode) -> None:
         # El cuerpo va antes que la condición en el código fuente
+        self._olvidar_en_ciclo(node, node.children[0])
         self._sentencia(node.children[0])
         self._condicion("until", node, node.children[1])
+
+    def _olvidar_en_ciclo(self, ciclo: ASTNode, cuerpo: ASTNode) -> None:
+        """Las variables asignadas en el cuerpo cambian en cada vuelta: pierden su valor."""
+        olvidadas = [n for n in _asignadas(cuerpo) if self._valores.pop(n, None) is not None]
+        if olvidadas:
+            self._traza(ciclo.line, "valores", f"sin valor dentro del ciclo: {', '.join(olvidadas)}")
 
     def _condicion(self, estructura: str, node: ASTNode, cond: ASTNode) -> None:
         t = self._expresion(cond)
@@ -162,6 +211,7 @@ class SemanticAnalyzer:
 
     def _sent_in(self, node: ASTNode) -> None:
         self._identificador(node.children[0])
+        self._valores.pop(node.children[0].value, None)  # el valor se lee al ejecutar
 
     def _sent_out(self, node: ASTNode) -> None:
         salida = node.children[0]
@@ -177,7 +227,10 @@ class SemanticAnalyzer:
             return self._literal(node)
 
         if node.kind == "IDENTIFIER":
-            return self._identificador(node)
+            t = self._identificador(node)
+            if t != Tipo.ERROR and node.value in self._valores:
+                node.attrs["valor"] = self._valores[node.value]
+            return t
 
         if node.kind in tipos.OPERADORES_UNARIOS and len(node.children) == 1:
             return self._unaria(node)
@@ -275,6 +328,13 @@ class SemanticAnalyzer:
         self._traza(ident.line, "buscar", f"{ident.value} → {simbolo.tipo}, dirección {simbolo.direccion}")
         return simbolo.tipo
 
+    def _asignar_valor(self, node: ASTNode, ident: ASTNode, valor) -> None:
+        """Guarda el nuevo valor de la variable y lo anota en la sentencia y en su destino."""
+        self._valores[ident.value] = valor
+        ident.attrs["valor"] = valor
+        node.attrs["valor"] = valor
+        self._traza(node.line, "valores", f"{ident.value} = {_formato(valor)}")
+
     def _convertir(self, node: ASTNode) -> ASTNode:
         """Envuelve `node` (int) en un nodo explícito CONV int→float."""
         conv = ASTNode(kind="CONV", value="int→float", line=node.line, col=node.col, children=[node])
@@ -291,6 +351,24 @@ class SemanticAnalyzer:
 
     def _traza(self, linea: Optional[int], accion: str, detalle: str) -> None:
         self._recorrido.append({"linea": linea, "accion": accion, "detalle": detalle})
+
+
+def _asignadas(node: ASTNode) -> list[str]:
+    """Variables que se modifican (asignación, ++/--, cin) dentro de `node`, sin repetir."""
+    nombres: list[str] = []
+    pendientes = [node]
+    while pendientes:  # iterativo: el anidamiento puede ser muy profundo
+        actual = pendientes.pop()
+        if actual.kind in ("asignacion", "incremento", "sent_in") and actual.children:
+            nombre = actual.children[0].value
+            if nombre not in nombres:
+                nombres.append(nombre)
+        pendientes.extend(reversed(actual.children))
+    return nombres
+
+
+def _mismo_valor(a, b) -> bool:
+    return type(a) is type(b) and a == b
 
 
 def _describir(node: ASTNode) -> str:

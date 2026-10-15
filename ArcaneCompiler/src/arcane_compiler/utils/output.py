@@ -36,7 +36,10 @@ def format_semantic(resultado: SemanticResult) -> str:
 
 
 def format_symbol_table(resultado: SemanticResult) -> str:
-    """Sección TABLA_SIMBOLOS: lista de {nombre, tipo, direccion, declaracion, referencias}."""
+    """Sección TABLA_SIMBOLOS: lista de {nombre, tipo, direccion, referencias}.
+
+    `referencias` son las líneas de la declaración y de cada uso, una por aparición.
+    """
     return json.dumps(resultado.tabla.to_list(), indent=2, ensure_ascii=False)
 
 

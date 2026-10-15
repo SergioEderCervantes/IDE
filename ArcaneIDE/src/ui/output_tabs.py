@@ -29,7 +29,7 @@ class OutputTabs(QTabWidget):
                 widget = SemanticView()
                 self._semantic_view = widget
             elif name == "Tabla de Símbolos":
-                widget = DataTable(["Nombre", "Tipo", "Dirección", "Declaración", "Referencias"])
+                widget = DataTable(["Nombre", "Tipo", "Dirección", "Referencias"])
                 self._symbol_table = widget
             elif name == "Errores":
                 widget = ErrorPanel()
@@ -67,7 +67,7 @@ class OutputTabs(QTabWidget):
     def update_symbol_table(self, simbolos: Optional[list]) -> None:
         """JSON de la sección TABLA_SIMBOLOS ya parseado (None si la fase no se ejecutó)."""
         self._symbol_table.set_rows([
-            [s.get("nombre"), s.get("tipo"), s.get("direccion"), s.get("declaracion"),
+            [s.get("nombre"), s.get("tipo"), s.get("direccion"),
              ", ".join(str(linea) for linea in s.get("referencias") or [])]
             for s in simbolos or []
         ])

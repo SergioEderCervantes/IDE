@@ -7,6 +7,9 @@ nombre → Symbol y no necesita eliminar entradas al salir de un bloque.
 La dirección de memoria se asigna con un contador secuencial (memloc) en orden de
 declaración, como en el lenguaje TINY de Louden: la primera variable es la 0, la
 siguiente la 1, etc.
+
+Las referencias son las líneas de todas las apariciones del identificador, empezando
+por la declaración. Cada aparición cuenta: en `y = y + 1;` la línea aparece dos veces.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -19,15 +22,14 @@ class Symbol:
     nombre: str
     tipo: Tipo
     direccion: int
-    declaracion: int  # línea donde se declaró
-    referencias: list[int] = field(default_factory=list)  # líneas donde se usa (sin repetir)
+    declaracion: int  # línea donde se declaró (para el mensaje de declaración duplicada)
+    referencias: list[int] = field(default_factory=list)  # una línea por aparición
 
     def to_dict(self) -> dict:
         return {
             "nombre": self.nombre,
             "tipo": str(self.tipo),
             "direccion": self.direccion,
-            "declaracion": self.declaracion,
             "referencias": list(self.referencias),
         }
 
@@ -45,7 +47,7 @@ class SymbolTable:
         """
         if nombre in self._simbolos:
             return None
-        simbolo = Symbol(nombre, tipo, self._memloc, linea)
+        simbolo = Symbol(nombre, tipo, self._memloc, linea, [linea])
         self._simbolos[nombre] = simbolo
         self._memloc += 1
         return simbolo
@@ -55,9 +57,9 @@ class SymbolTable:
         return self._simbolos.get(nombre)
 
     def add_reference(self, nombre: str, linea: int) -> None:
-        """Registra la línea de un uso del identificador (una vez por línea)."""
+        """Registra la línea de un uso del identificador (una vez por aparición)."""
         simbolo = self._simbolos.get(nombre)
-        if simbolo is not None and linea not in simbolo.referencias:
+        if simbolo is not None:
             simbolo.referencias.append(linea)
 
     def __contains__(self, nombre: str) -> bool:

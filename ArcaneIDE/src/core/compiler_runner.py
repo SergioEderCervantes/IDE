@@ -15,7 +15,7 @@ class CompilerRunner(QObject):
                          avisos: list[str]}
         semantico:      {success, ast (anotado), recorrido: list[{linea, accion, detalle}],
                          error_count} | None
-        tabla_simbolos: list[{nombre, tipo, direccion, declaracion, referencias}] | None
+        tabla_simbolos: list[{nombre, tipo, direccion, referencias}] | None
     - compilation_error(str): el compilador no pudo ejecutarse o falló (mensaje para el usuario).
     """
     compilation_started = pyqtSignal()

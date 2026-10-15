@@ -158,7 +158,7 @@ estructura del árbol ya expresa la agrupación).
 |---|---|---|---|
 | `dtype` | **Heredado** | `id_list` e `IDENTIFIER` de una declaración | Baja desde `tipo` hacia cada identificador declarado |
 | `tipo` | **Sintetizado** | Expresiones, literales, identificadores | Sube desde las hojas: literal → su tipo; identificador → tipo de la tabla de símbolos; operador → regla de la sección 8 |
-| `valor` | **Sintetizado** | Expresiones constantes | Se calcula solo si todos los operandos tienen valor conocido (literales). Los identificadores **no** tienen valor en compilación |
+| `valor` | **Sintetizado** | Expresiones, asignaciones e incrementos | Se calcula si todos los operandos tienen valor conocido. Sube desde las hojas hasta la sentencia: `y = 2 + 3;` anota `valor = 5` en el `+`, en la `asignacion` y en la `y` destino. Un identificador tiene el último valor conocido de la variable (ver abajo) |
 | `dir` | Asignado al declarar | `IDENTIFIER` declarado / tabla de símbolos | Contador secuencial `memloc` = 0, 1, 2… en orden de declaración (como TINY) |
 
 Tipos posibles: `int`, `float`, `bool` y el tipo interno `error`, que se asigna a una
@@ -177,6 +177,18 @@ semánticos. Como el lexer lee `-2147483648` como `-` aplicado a `2147483648`, e
 acepta cuando va precedido de un menos unario. Una expresión constante real cuyo resultado no
 es finito (se desborda a infinito) no recibe `valor`.
 
+**Valor de las variables.** El analizador recuerda el último valor asignado a cada variable,
+así que en `y = 4; y = y + 1;` la `y` de la derecha tiene `valor = 4` y la asignación (y su
+destino) `valor = 5`. Solo se guarda un valor cuando es el mismo en cualquier ejecución:
+
+- `cin >> x`, una asignación con error de tipo o con una expresión sin valor dejan a `x` sin valor.
+- Después de un `if`, solo conservan su valor las variables que valen lo mismo en ambas ramas
+  (sin `else`, la rama que falta es el estado antes del `if`).
+- En `while` y `do … until`, las variables asignadas dentro del cuerpo no tienen valor en la
+  condición, en el cuerpo ni (en el `while`) después del ciclo, porque cambian en cada vuelta.
+
+Con esto también se detectan errores como `x = 0; y = 5 / x;` (división entre cero).
+
 ---
 
 ## 7. Reglas semánticas por producción
@@ -190,18 +202,18 @@ lista de errores de la sección 9.
 | `programa → main { lista_declaracion }` | Tabla de símbolos vacía; `memloc = 0`. Se recorren las declaraciones y sentencias en orden |
 | `declaracion_variable → tipo id_list ;` | `id_list.dtype = tipo.tipo` (heredado) |
 | `tipo → int \| float \| bool` | `tipo.tipo = int \| float \| bool` |
-| `id_list → IDENTIFIER { , IDENTIFIER }` | Para cada identificador: `id.dtype = id_list.dtype`. Si `lookup(id)` existe → **#2** (duplicado). Si no, `insert(id, id.dtype, memloc, línea)` y `memloc = memloc + 1` |
-| `asignacion → IDENTIFIER = expresion ;` | `t = lookup(id)` (si no existe → **#1**). Se compara `t` con `expresion.tipo` (sección 8, asignación). Si es `float ← int` se inserta `CONV int→float` sobre la expresión |
+| `id_list → IDENTIFIER { , IDENTIFIER }` | Para cada identificador: `id.dtype = id_list.dtype`. Si `lookup(id)` existe → **#2** (duplicado). Si no, `insert(id, id.dtype, memloc, línea)` y `memloc = memloc + 1`; la línea de la declaración es la primera referencia |
+| `asignacion → IDENTIFIER = expresion ;` | `t = lookup(id)` (si no existe → **#1**). Se compara `t` con `expresion.tipo` (sección 8, asignación). Si es `float ← int` se inserta `CONV int→float` sobre la expresión. Si no hay error y la expresión tiene `valor`, `asignacion.valor = id.valor = expresion.valor` y la variable lo conserva; si no, la variable queda sin valor |
 | `asignacion → IDENTIFIER = ;` | Error: asignación sin expresión |
-| `incremento → IDENTIFIER (++ \| --) ;` | `t = lookup(id)` (**#1**). `t` debe ser `int` o `float`; si es `bool` → **#5**. `incremento.tipo = t` |
+| `incremento → IDENTIFIER (++ \| --) ;` | `t = lookup(id)` (**#1**). `t` debe ser `int` o `float`; si es `bool` → **#5**. `incremento.tipo = t`; si la variable tiene valor, `incremento.valor = id.valor = valor ± 1` |
 | `seleccion → if expresion then …` | `expresion.tipo` debe ser `bool` → si no, **#7** |
 | `iteracion → while expresion …` | `expresion.tipo` debe ser `bool` → si no, **#7** |
 | `repeticion → do … until expresion` | `expresion.tipo` debe ser `bool` → si no, **#7** |
-| `sent_in → cin >> IDENTIFIER ;` | `lookup(id)` debe existir → si no, **#1** |
+| `sent_in → cin >> IDENTIFIER ;` | `lookup(id)` debe existir → si no, **#1**. La variable queda sin valor |
 | `sent_out → cout << salida ;` | Cada expresión de `salida` debe tener un tipo válido; las cadenas no se verifican |
 | `componente → INTEGER \| REAL` | `tipo = int \| float`; `valor` = el número. Fuera del rango del tipo → error (constante fuera de rango) |
 | `componente → true \| false` | `tipo = bool`; `valor` = verdadero / falso |
-| `componente → IDENTIFIER` | `tipo = lookup(id).tipo` (si no existe → **#1** y `tipo = error`); se registra la línea como referencia. Sin `valor` |
+| `componente → IDENTIFIER` | `tipo = lookup(id).tipo` (si no existe → **#1** y `tipo = error`); se registra la línea como referencia, una vez por aparición (`y = y + 1` registra la línea dos veces). `valor` = último valor conocido de la variable, si lo tiene |
 | `componente → ( expresion )` | `tipo` y `valor` de la expresión |
 | `componente → ! componente` | Operando `bool` → `tipo = bool`; si no, **#5** |
 | `unario → - unario` | Operando `int`/`float` → mismo tipo; `bool` → **#5** |

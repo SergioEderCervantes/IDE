@@ -55,12 +55,18 @@ def test_lookup():
     assert "x" in tabla and "suma" not in tabla
 
 
-def test_add_reference_una_vez_por_linea():
+def test_referencias_empiezan_con_la_declaracion():
+    tabla = SymbolTable()
+    tabla.insert("y", INT, 2)
+    assert tabla.lookup("y").referencias == [2]
+
+
+def test_add_reference_una_vez_por_aparicion():
     tabla = SymbolTable()
     tabla.insert("y", INT, 2)
     for linea in (7, 9, 9, 12):  # y = y + 1 en la línea 9 son dos usos
         tabla.add_reference("y", linea)
-    assert tabla.lookup("y").referencias == [7, 9, 12]
+    assert tabla.lookup("y").referencias == [2, 7, 9, 9, 12]
 
 
 def test_add_reference_de_no_declarado_no_hace_nada():
@@ -75,8 +81,8 @@ def test_to_list_en_orden_de_declaracion():
     tabla.insert("a", INT, 2)
     tabla.add_reference("a", 5)
     assert tabla.to_list() == [
-        {"nombre": "b", "tipo": "float", "direccion": 0, "declaracion": 1, "referencias": []},
-        {"nombre": "a", "tipo": "int", "direccion": 1, "declaracion": 2, "referencias": [5]},
+        {"nombre": "b", "tipo": "float", "direccion": 0, "referencias": [1]},
+        {"nombre": "a", "tipo": "int", "direccion": 1, "referencias": [2, 5]},
     ]
 
 
@@ -301,8 +307,13 @@ def test_no_declarado_no_genera_errores_en_cascada():
 def test_referencias_en_la_tabla():
     res = _analizar("main {\n int y;\n y = 1;\n y = y + 1;\n cout << y; }")
     assert res.tabla.to_list() == [
-        {"nombre": "y", "tipo": "int", "direccion": 0, "declaracion": 2, "referencias": [3, 4, 5]},
+        {"nombre": "y", "tipo": "int", "direccion": 0, "referencias": [2, 3, 4, 4, 5]},
     ]
+
+
+def test_declaracion_duplicada_no_es_referencia():
+    res = _analizar("main {\n int x;\n float x;\n x = 1; }")
+    assert res.tabla.lookup("x").referencias == [2, 4]
 
 
 # ─── Asignaciones ────────────────────────────────────────────────────────────
@@ -342,10 +353,57 @@ def test_expresion_mixta_convierte_y_calcula_valor():
     assert [c.kind for c in expr.children] == ["CONV", "REAL"]
 
 
-def test_variables_no_tienen_valor():
+def test_variable_sin_asignar_no_tiene_valor():
     expr = _expr("main { int x, y; y = x + 1; }")
     assert expr.attrs == {"tipo": "int"}
     assert expr.children[0].attrs == {"tipo": "int", "dir": 0}
+
+
+def _valor_final(source: str):
+    """Valor anotado en la última sentencia del programa (None si no tiene)."""
+    return _sentencias(_analizar(source))[-1].attrs.get("valor")
+
+
+def test_valor_de_variable_se_propaga():
+    sentencias = _sentencias(_analizar("main { int y, z; y = 2 + 3; z = y * 2 + 1; }"))
+    asig_y, asig_z = sentencias[-2:]
+    assert asig_y.attrs["valor"] == 5 and asig_y.children[0].attrs["valor"] == 5
+    assert asig_z.attrs["valor"] == 11
+    assert asig_z.children[1].attrs == {"tipo": "int", "valor": 11}
+
+
+def test_valor_con_conversion_e_incremento():
+    assert _valor_final("main { float a; a = 2; a = a / 4; }") == 0.5
+    assert _valor_final("main { int x; x = 3; x++; }") == 4
+    assert _valor_final("main { float a; a = 1.5; a--; }") == 0.5
+
+
+def test_cin_y_errores_de_tipo_borran_el_valor():
+    assert _valor_final("main { int x, y; x = 1; cin >> x; y = x + 1; }") is None
+    assert _valor_final("main { int x, y; x = 1; x = 2.5; y = x + 1; }") is None
+
+
+def test_valor_despues_de_if():
+    # Igual en ambas ramas → se conserva; distinto o sin else → se pierde
+    assert _valor_final("main { int x, y; if true then x = 1; else x = 1; end y = x; }") == 1
+    assert _valor_final("main { int x, y; if true then x = 1; else x = 2; end y = x; }") is None
+    assert _valor_final("main { int x, y; x = 0; if true then x = 1; end y = x; }") is None
+    assert _valor_final("main { int x, y; x = 0; if true then y = 1; end y = x; }") == 0
+
+
+def test_valor_en_ciclos():
+    # Lo que se asigna en el cuerpo no tiene valor ni en la condición ni después
+    res = _analizar("main { int i, n; i = 0; n = 3; while i < n i = i + 1; end cout << i; }")
+    ciclo = _sentencias(res)[-2]
+    cond = ciclo.children[0]
+    assert "valor" not in cond.children[0].attrs  # i
+    assert cond.children[1].attrs["valor"] == 3   # n no cambia en el ciclo
+    assert _valor_final("main { int i, n; i = 0; while i < 3 i++; end n = i; }") is None
+    assert _valor_final("main { int i, n; i = 0; do i = 5; until i > 0 n = i; }") == 5
+
+
+def test_division_entre_variable_que_vale_cero():
+    assert _errores("main { int x, y; x = 0; y = 5 / x; }") == ["división entre cero en '/'"]
 
 
 def test_division_entera_en_comparacion():
@@ -437,9 +495,9 @@ def test_recorrido():
     assert pasos == [
         (1, "inicio"),
         (2, "insertar"),
-        (3, "buscar"), (3, "conversión"), (3, "asignación"),
+        (3, "buscar"), (3, "conversión"), (3, "asignación"), (3, "valores"),
         (4, "buscar"), (4, "conversión"), (4, "condición"),
-        (4, "buscar"), (4, "buscar"), (4, "asignación"),
+        (4, "buscar"), (4, "buscar"), (4, "asignación"), (4, "valores"),
         (None, "fin"),
     ]
 
@@ -469,7 +527,7 @@ def test_test_semantica_tabla():
         ("x", "int", 0, 2), ("y", "int", 1, 2), ("z", "int", 2, 2),
         ("a", "float", 3, 3), ("b", "float", 4, 3), ("c", "float", 5, 3),
     ]
-    assert res.tabla.lookup("x").referencias == [5, 6, 11, 27, 30, 31, 32, 38]
+    assert res.tabla.lookup("x").referencias == [2, 5, 6, 11, 27, 30, 31, 32, 38]
 
 
 def test_test_semantica_valores_constantes():
@@ -478,10 +536,18 @@ def test_test_semantica_valores_constantes():
         s.line: s.children[1].attrs.get("valor")
         for s in _sentencias(res) if s.kind == "asignacion"
     }
-    assert {l: valores[l] for l in (7, 10, 11, 12, 13, 27)} == {
-        7: 4, 10: 61.0, 11: 8, 12: -2, 13: 64, 27: 7,
+    assert {l: valores[l] for l in (7, 8, 9, 10, 11, 12, 13, 27)} == {
+        7: 4, 8: 11, 9: 5, 10: 61.0, 11: 8, 12: -2, 13: 64, 27: 7,
     }
-    assert valores[8] is None  # z = y + 7 depende de una variable
+
+
+def test_test_semantica_valor_sube_hasta_la_asignacion():
+    res = _analizar((_SAMPLES / "TestSemantica.txt").read_text(encoding="utf-8"))
+    linea9 = next(s for s in _sentencias(res) if s.line == 9)  # y = y + 1;
+    destino, suma = linea9.children
+    assert linea9.attrs["valor"] == 5 and destino.attrs["valor"] == 5
+    assert suma.attrs["valor"] == 5
+    assert suma.children[0].attrs["valor"] == 4  # la y de la derecha todavía vale 4
 
 
 # ─── int de 32 bits y números extremos (auditoría) ───────────────────────────
