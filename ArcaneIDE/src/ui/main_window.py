@@ -190,6 +190,7 @@ class MainWindow(QMainWindow):
     def _limpiar_resultados(self):
         """Quita los resultados de compilación: pertenecían al archivo anterior."""
         self.output_tabs.clear_all()
+        self.editor_widget.limpiar_errores()
         self.status_bar.showMessage("Listo")
 
     def _close_file(self):
@@ -198,6 +199,7 @@ class MainWindow(QMainWindow):
 
         self.ignore_text_changes = True
         self.editor_widget.clear()
+        self.editor_widget.limpiar_errores()
         self.output_tabs.clear_all()
         self.file_manager.new_file()
         self.ignore_text_changes = False
@@ -276,6 +278,7 @@ class MainWindow(QMainWindow):
              return
 
         self.output_tabs.clear_all()
+        self.editor_widget.limpiar_errores()
         self._result_tab = result_tab
         self._archivo_compilado = self.file_manager.get_current_file()
         phase_func(str(self._archivo_compilado))
@@ -314,6 +317,7 @@ class MainWindow(QMainWindow):
         self.output_tabs.update_execution(results.get("ejecucion", ""))
 
         total = self.output_tabs.update_errors(errores)
+        self.editor_widget.marcar_errores(errores)
 
         if total:
             self.status_bar.showMessage(f"Compilación terminada con {total} error(es). Revisa la pestaña Errores.")

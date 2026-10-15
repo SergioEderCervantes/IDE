@@ -1,7 +1,22 @@
+from typing import Optional
 from PyQt6.Qsci import QsciScintilla
-from PyQt6.QtGui import QFont, QColor
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtCore import QPoint, QRectF, Qt
+from PyQt6.QtGui import QFont, QColor, QImage, QPainter
+from PyQt6.QtWidgets import QToolTip, QWidget
 from .arcane_lexer import ArcaneLexer
+from .paleta import paleta
+
+# Marcas de errores de compilación en el editor
+_INDICADOR_ERROR = 8   # los indicadores 0-7 los reserva Scintilla para los lexers
+_MARCADOR_ERROR = 1
+_MARGEN_ERRORES = 0    # a la izquierda de los números de línea
+_MARGEN_NUMEROS = 1
+_CARACTERES_PALABRA = "_."               # además de letras y dígitos: x, suma, 32.32
+_CARACTERES_OPERADOR = "+-*/%^<>=!&|"    # ==, <=, &&, >> se subrayan completos
+
+# Llave del JSON de ERRORES → nombre de la fase en el mensaje
+_FASES = {"lexico": "léxico", "sintactico": "sintáctico", "semantico": "semántico"}
+
 
 class EditorWidget(QsciScintilla):
     """
@@ -16,9 +31,22 @@ class EditorWidget(QsciScintilla):
         font = QFont("Courier New", 14)
         self.setFont(font)
 
-        # Números de línea
-        self.setMarginType(0, QsciScintilla.MarginType.NumberMargin)
-        self.setMarginWidth(0, "0000")
+        # Márgenes: marcas de error y números de línea
+        self.setMarginType(_MARGEN_ERRORES, QsciScintilla.MarginType.SymbolMargin)
+        self.setMarginWidth(_MARGEN_ERRORES, 14)
+        self.setMarginMarkerMask(_MARGEN_ERRORES, 1 << _MARCADOR_ERROR)
+        self.setMarginType(_MARGEN_NUMEROS, QsciScintilla.MarginType.NumberMargin)
+        self.setMarginWidth(_MARGEN_NUMEROS, "0000")
+        self.setMarginMarkerMask(_MARGEN_NUMEROS, 0)
+
+        # Errores de compilación: subrayado ondulado, punto en el margen y mensaje al
+        # dejar el mouse sobre el subrayado
+        self.indicatorDefine(QsciScintilla.IndicatorStyle.SquigglePixmapIndicator, _INDICADOR_ERROR)
+        self._mensajes_error: list[str] = []
+        self.SendScintilla(QsciScintilla.SCI_SETMARGINLEFT, 0, 6)  # aire entre los números y el código
+        self.SendScintilla(QsciScintilla.SCI_SETMOUSEDWELLTIME, 400)
+        self.SCN_DWELLSTART.connect(self._mostrar_mensaje_error)
+        self.SCN_DWELLEND.connect(lambda *_: QToolTip.hideText())
 
         # Otras configuraciones
         self.setIndentationGuides(True)
@@ -102,7 +130,12 @@ class EditorWidget(QsciScintilla):
         self.setMarginsForegroundColor(QColor(colors['margin_fg']))
         self.setCaretLineBackgroundColor(QColor(colors['caret_bg']))
         self.setCaretForegroundColor(QColor('#ffffff'))
-        
+
+        # Marcas de error con el rojo de la paleta (clara u oscura según el tema)
+        rojo = QColor(paleta(tema_claro=theme_id.startswith('light'))["error"])
+        self.setIndicatorForegroundColor(rojo, _INDICADOR_ERROR)
+        self.markerDefine(_punto(rojo), _MARCADOR_ERROR)
+
 
         # Forzar re-coloreo completo del documento
         self.recolor()
@@ -117,6 +150,58 @@ class EditorWidget(QsciScintilla):
         self.recolor()
 
 
+    # ─── Marcas de errores de compilación ────────────────────────────────────
+
+    def marcar_errores(self, errores: Optional[dict]) -> None:
+        """Marca en el código los errores de la sección ERRORES (las tres fases).
+
+        Cada error con posición subraya la palabra (o el operador) donde empieza y pone
+        un punto en el margen de su línea. Un error sin posición (fin de archivo) solo
+        marca el margen de la última línea.
+        """
+        self.limpiar_errores()
+        for clave, fase in _FASES.items():
+            for error in (errores or {}).get(clave) or []:
+                self._marcar_error(fase, error.get("linea"), error.get("columna"), error.get("mensaje", ""))
+
+    def limpiar_errores(self) -> None:
+        self.SendScintilla(QsciScintilla.SCI_SETINDICATORCURRENT, _INDICADOR_ERROR)
+        self.SendScintilla(QsciScintilla.SCI_INDICATORCLEARRANGE, 0, self.length())
+        self.markerDeleteAll(_MARCADOR_ERROR)
+        self._mensajes_error = []
+
+    def _marcar_error(self, fase: str, linea: Optional[int], columna: Optional[int], mensaje: str) -> None:
+        if self.lines() == 0:
+            return
+        ultima = self.lines() - 1
+        fila = ultima if linea is None else min(max(linea - 1, 0), ultima)
+        self.markerAdd(fila, _MARCADOR_ERROR)
+        if linea is None:
+            return
+
+        texto = self.text(fila).rstrip("\r\n")
+        inicio = min(max((columna or 1) - 1, 0), max(len(texto) - 1, 0))
+        fin = _fin_del_token(texto, inicio)
+        if fin <= inicio:
+            return
+
+        # Cada error es un valor distinto del indicador: así el mensaje se recupera al pasar
+        # el mouse aunque el texto se haya movido al editar
+        self._mensajes_error.append(f"Error {fase}: {mensaje}")
+        desde = self.positionFromLineIndex(fila, inicio)
+        hasta = self.positionFromLineIndex(fila, fin)
+        self.SendScintilla(QsciScintilla.SCI_SETINDICATORCURRENT, _INDICADOR_ERROR)
+        self.SendScintilla(QsciScintilla.SCI_SETINDICATORVALUE, len(self._mensajes_error))
+        self.SendScintilla(QsciScintilla.SCI_INDICATORFILLRANGE, desde, hasta - desde)
+
+    def _mostrar_mensaje_error(self, posicion: int, x: int, y: int) -> None:
+        if posicion < 0:
+            return
+        valor = self.SendScintilla(QsciScintilla.SCI_INDICATORVALUEAT, _INDICADOR_ERROR, posicion)
+        if 0 < valor <= len(self._mensajes_error):
+            QToolTip.showText(self.viewport().mapToGlobal(QPoint(x, y)),  # type: ignore
+                              self._mensajes_error[valor - 1], self.viewport())
+
     # TODO: Una sola funcion que retorne las dos cosas
     def get_current_line_number(self) -> int:
         """Retorna el número de línea actual (base 1)."""
@@ -127,3 +212,32 @@ class EditorWidget(QsciScintilla):
         """Retorna el número de columna actual (base 1)."""
         _, col = self.getCursorPosition()
         return col + 1
+
+
+def _punto(color: QColor) -> QImage:
+    """Marcador del margen: un punto pequeño y suave (el círculo estándar de Scintilla
+    ocupa toda la altura de la línea)."""
+    imagen = QImage(14, 14, QImage.Format.Format_ARGB32_Premultiplied)
+    imagen.fill(Qt.GlobalColor.transparent)
+    pintor = QPainter(imagen)
+    pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pintor.setPen(Qt.PenStyle.NoPen)
+    pintor.setBrush(color)
+    pintor.drawEllipse(QRectF(3, 3, 8, 8))
+    pintor.end()
+    return imagen
+
+
+def _fin_del_token(texto: str, inicio: int) -> int:
+    """Índice donde termina el token que empieza en `inicio`: una palabra (suma, 32.32),
+    un operador de uno o más caracteres (==, &&) o, si no, un solo carácter."""
+    if inicio >= len(texto):
+        return inicio
+    for es_parte in (lambda c: c.isalnum() or c in _CARACTERES_PALABRA,
+                     lambda c: c in _CARACTERES_OPERADOR):
+        fin = inicio
+        while fin < len(texto) and es_parte(texto[fin]):
+            fin += 1
+        if fin > inicio:
+            return fin
+    return inicio + 1
