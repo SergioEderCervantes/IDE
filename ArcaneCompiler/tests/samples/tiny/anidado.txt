@@ -1,0 +1,18 @@
+/* Programa anidado de validar_extension.py (Tiny_Intermedio_TM): if y repeat anidados.
+   Con entrada 3 imprime 99, 99 y 1. */
+main {
+  int x;
+  cin >> x;
+  if 0 < x then
+    do
+      if x < 2 then
+        cout << x;
+      else
+        cout << 99;
+      end
+      x = x - 1;
+    until x == 0;
+  else
+    cout << 0;
+  end
+}

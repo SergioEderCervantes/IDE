@@ -2,7 +2,8 @@
 
 Gramática vigente del compilador (analizador sintáctico de `ArcaneCompiler`) y reglas
 semánticas asociadas a cada producción. Es la referencia para la fase 3 (análisis
-semántico) y para su documento técnico.
+semántico) y para su documento técnico. La sección 11 describe el código intermedio de la
+fase 4.
 
 ---
 
@@ -299,3 +300,79 @@ en lugar de detener el compilador.
 | `^` asocia a la derecha | Convención matemática: `2 ^ 3 ^ 2` = 512 |
 | `suma_op` ya no incluye `++`/`--` | `a ++ b` no tiene significado; el incremento es la sentencia `incremento` |
 | Nueva producción `unario → - unario` | Permitir números negativos (`-5`, `-x`, `2 ^ -1`) |
+
+---
+
+## 11. Código intermedio de tres direcciones (fase 4)
+
+La fase 4 recorre el AST anotado (con sus nodos `CONV`) y produce una lista de cuádruplos
+`(op, arg1, arg2, resultado)`. El texto sigue el formato del archivo `.ci` del TINY de la
+materia (`Tiny_Intermedio_TM`, `intermedio.c`): un programa de TINY escrito igual en este
+lenguaje da el mismo código línea por línea (pruebas en `tests/samples/tiny/`). Solo se
+genera si el análisis semántico no tuvo errores.
+
+**Instrucciones:**
+
+| Instrucción | Significado |
+|---|---|
+| `read x` | Lee un valor para `x` (`cin`) |
+| `write a` / `write "texto", a` | Escribe (`cout`); un `cout` con dos elementos es una sola instrucción |
+| `x = a` | Copia |
+| `t1 = a op b` | Operación binaria: `+ - * / % ^ < <= > >= == != && \|\|` |
+| `t1 = -a` / `t1 = !a` | Menos unario / negación lógica |
+| `t1 = (float) a` | Conversión `int → float` (nodo `CONV`) |
+| `if_false a goto L1` | Salta a `L1` si `a` es false |
+| `goto L1` / `label L1` | Salto incondicional / etiqueta |
+| `halt` | Fin del programa |
+
+Los operandos son variables, temporales (`t1`, `t2`, …), constantes (`5`, `2.50`, `true`)
+o cadenas (`"texto"`). Cada cuádruplo guarda además el tipo del resultado y la línea del
+código fuente.
+
+**Esquema de traducción** (`c` es el operando donde quedó el valor de la condición):
+
+| Producción | Código |
+|---|---|
+| `asignacion → IDENTIFIER = expresion` | código de la expresión; `x = r` |
+| `incremento → IDENTIFIER ++` (`--`) | `t = x + 1` (`- 1`); `x = t` (`1.0` si `x` es float) |
+| `sent_in → cin >> IDENTIFIER` | `read x` |
+| `sent_out → cout << salida` | código de la expresión; `write …` |
+| `seleccion` sin `else` | `if_false c goto L1` / then / `label L1` |
+| `seleccion` con `else` | `if_false c goto L1` / then / `goto L2` / `label L1` / else / `label L2` |
+| `iteracion → while c …` | `label L1` / `if_false c goto L2` / cuerpo / `goto L1` / `label L2` |
+| `repeticion → do … until c` | `label L1` / cuerpo / `if_false c goto L1` |
+| Operador binario / unario / `CONV` | código de los operandos; resultado en un temporal nuevo |
+| Literal o identificador | Se usa directamente, sin temporal |
+| `declaracion_variable` | No genera código |
+
+**Reglas** (las mismas de TINY, para que la numeración coincida):
+
+- Las expresiones se traducen en postorden (izquierdo, derecho, operación). El temporal se
+  numera después de traducir los operandos: `(x + 1) * (x - 2)` da `t1 = x + 1`,
+  `t2 = x - 2`, `t3 = t1 * t2`.
+- Los temporales y las etiquetas se numeran en todo el programa y no se reutilizan.
+- En un `if`, `L1` se numera antes de traducir el then y `L2` después.
+- No se usan los valores que calculó el análisis semántico: `x = 2 + 3` da `t1 = 2 + 3`,
+  `x = t1`. La única excepción es el menos unario sobre un literal, que se escribe como la
+  constante negativa (`x = -5`, y así `-2147483648` es una constante válida).
+- `&&` y `||` se evalúan completos (sin cortocircuito), como cualquier operación binaria.
+- El código de una rama que nunca se ejecuta (sección 6) se genera igual.
+
+Ejemplo (`tests/samples/tiny/factorial.txt`, idéntico al `factorial.ci` de la materia):
+
+```
+main {                              read x
+  int x, fact;                      t1 = 0 < x
+  cin >> x;                         if_false t1 goto L1
+  if 0 < x then                     fact = 1
+    fact = 1;                       label L2
+    do                              t2 = fact * x
+      fact = fact * x;              fact = t2
+      x = x - 1;                    t3 = x - 1
+    until x == 0;                   x = t3
+    cout << fact;                   t4 = x == 0
+  end                               if_false t4 goto L2
+}                                   write fact
+                                    label L1
+                                    halt
+```

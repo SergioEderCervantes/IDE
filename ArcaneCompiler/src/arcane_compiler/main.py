@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from arcane_compiler.errors import CompilerError, LEXICO, SINTACTICO, SEMANTICO
+from arcane_compiler.intermediate.generator import IntermediateGenerator, IntermediateResult
 from arcane_compiler.lexer.lexer import Lexer
 from arcane_compiler.lexer.token import Token
 from arcane_compiler.parser.ast_builder import build_ast
@@ -39,7 +40,7 @@ _ANIDAMIENTO_EXCESIVO = (
     "divide la expresión en partes más pequeñas"
 )
 
-# Fases aún no implementadas
+# Nombres de las fases 4 y 5 para los avisos
 _PHASE_TITLES = {
     "intermediate": "generación de código intermedio",
     "execution": "ejecución",
@@ -52,6 +53,7 @@ class CompilationResult:
     tokens: Optional[list[Token]] = None
     ast: Optional[ASTNode] = None
     semantico: Optional[SemanticResult] = None
+    intermedio: Optional[IntermediateResult] = None
     errores: dict[str, Optional[list[CompilerError]]] = field(
         default_factory=lambda: {LEXICO: None, SINTACTICO: None, SEMANTICO: None}
     )
@@ -110,15 +112,28 @@ def compile_source(source: str, phase: str) -> CompilationResult:
         result.semantico = None
         result.errores[SEMANTICO] = [CompilerError(SEMANTICO, _ANIDAMIENTO_EXCESIVO)]
 
-    # ── Fases 4 y 5: pendientes de implementar
-    if phase in _PHASE_TITLES:
-        if result.errores[SEMANTICO]:
+    if "intermediate" not in requested:
+        return result
+    if result.errores[SEMANTICO]:
+        if phase in _PHASE_TITLES:  # con 'all' no se avisa
             result.avisos.append(
                 f"La fase de {_PHASE_TITLES[phase]} no se ejecutó: "
                 "corrige primero los errores semánticos."
             )
-        else:
-            result.avisos.append(f"La fase de {_PHASE_TITLES[phase]} aún no está implementada.")
+        return result
+
+    # ── Fase 4: código intermedio de tres direcciones (sobre el AST anotado)
+    try:
+        result.intermedio = IntermediateGenerator().generate(result.semantico.ast)
+    except RecursionError:
+        result.avisos.append(
+            "La fase de generación de código intermedio no se ejecutó: " + _ANIDAMIENTO_EXCESIVO + "."
+        )
+        return result
+
+    # ── Fase 5: pendiente de implementar
+    if phase == "execution":
+        result.avisos.append(f"La fase de {_PHASE_TITLES[phase]} aún no está implementada.")
     return result
 
 
@@ -137,7 +152,7 @@ def emit_result(result: CompilationResult) -> None:
     emit_section("LEXICO", tokens)
     emit_section("SINTACTICO", sintactico)
     emit_section("SEMANTICO", semantico)
-    emit_section("CODIGO_INTERMEDIO", "")
+    emit_section("CODIGO_INTERMEDIO", result.intermedio.texto() if result.intermedio else "")
     emit_section("TABLA_SIMBOLOS", tabla)
     emit_section("ERRORES", format_errors(result.errores, result.avisos))
     emit_section("EJECUCION", "")

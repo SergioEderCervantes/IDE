@@ -1,0 +1,8 @@
+/* aritmetica.tny (Tiny_Intermedio_TM): acumuladores y pila temporal.
+   Con entrada 5 imprime 18; con 2 imprime 0. */
+main {
+  int x, y;
+  cin >> x;
+  y = (x + 1) * (x - 2);
+  cout << y;
+}

@@ -62,7 +62,8 @@ class OutputTabs(QTabWidget):
         self._semantic_view.set_result(self._ultimo_ast, data, aviso)
 
     def update_intermediate_code(self, content: str):
-        self.tabs["código_intermedio"].setText(content)
+        # Texto plano: el código lleva <, > y && que no deben interpretarse como HTML
+        self.tabs["código_intermedio"].setPlainText(content)
 
     def update_symbol_table(self, simbolos: Optional[list]) -> None:
         """JSON de la sección TABLA_SIMBOLOS ya parseado (None si la fase no se ejecutó)."""

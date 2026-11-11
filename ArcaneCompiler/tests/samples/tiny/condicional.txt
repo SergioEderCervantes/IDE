@@ -1,0 +1,11 @@
+/* condicional.tny (Tiny_Intermedio_TM): un if con rama else.
+   Con entrada 2 imprime 1; con 3 imprime 2. */
+main {
+  int x;
+  cin >> x;
+  if x < 3 then
+    cout << 1;
+  else
+    cout << 2;
+  end
+}

@@ -74,9 +74,14 @@ def test_fase_all_ejecuta_las_fases_implementadas():
 
 
 def test_fase_pendiente_avisa():
-    r = compile_source("main { int x; }", "intermediate")
-    assert r.ast is not None
+    r = compile_source("main { int x; }", "execution")
+    assert r.ast is not None and r.intermedio is not None
     assert any("aún no está implementada" in a for a in r.avisos)
+
+
+def test_fase_intermedia_no_avisa():
+    r = compile_source("main { int x; }", "intermediate")
+    assert r.intermedio is not None and r.avisos == []
 
 
 def test_fase_semantica():
