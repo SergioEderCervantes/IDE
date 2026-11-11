@@ -1,14 +1,12 @@
-/* factorial.tny (Tiny_Intermedio_TM): calcula el factorial.
-   Con entrada 5 imprime 120; con 3 imprime 6; con 0 no imprime nada. */
 main {
   int x, fact;
-  cin >> x;              // lee un entero
-  if 0 < x then          // no se calcula si x <= 0
+  cin >> x;
+  if 0 < x then
     fact = 1;
     do
       fact = fact * x;
       x = x - 1;
     until x == 0;
-    cout << fact;        // factorial de x
+    cout << fact;
   end
 }

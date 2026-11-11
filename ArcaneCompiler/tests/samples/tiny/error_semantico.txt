@@ -1,5 +1,3 @@
-/* error_semantico.tny (Tiny_Intermedio_TM): la condición requiere un bool, no un int.
-   No debe generarse código intermedio. */
 main {
   int x;
   cin >> x;

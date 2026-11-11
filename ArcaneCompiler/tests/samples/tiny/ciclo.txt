@@ -1,5 +1,3 @@
-/* ciclo.tny (Tiny_Intermedio_TM): repeat hasta que x es cero, para x positivo.
-   Con entrada 3 imprime 0. */
 main {
   int x;
   cin >> x;
