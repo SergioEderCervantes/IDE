@@ -107,14 +107,14 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(x_tok.column, 1)
 
     def test_full_sample(self):
-        sample = Path(__file__).parent / "samples" / "valid_full.c"
+        sample = Path(__file__).parent / "samples" / "valid_full.txt"
         source = sample.read_text(encoding="utf-8")
         tokens, errors = Lexer(source).tokenize()
         self.assertEqual(len(errors), 0)
         self.assertGreater(len(tokens), 30)
 
     def test_error_sample(self):
-        sample = Path(__file__).parent / "samples" / "errors.c"
+        sample = Path(__file__).parent / "samples" / "errors.txt"
         source = sample.read_text(encoding="utf-8")
         tokens, errors = Lexer(source).tokenize()
         self.assertGreaterEqual(len(errors), 3)

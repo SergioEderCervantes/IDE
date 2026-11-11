@@ -1,164 +1,155 @@
 # ArcaneIDE + ArcaneCompiler
 
-A monorepo containing a PyQt6-based IDE and a from-scratch compiler for a C-like language. Both packages share a single virtual environment.
+Compilador e IDE para el lenguaje Arcane, proyecto de Compiladores II (UAA), basado en el
+compilador TINY de Kenneth C. Louden. El compilador está escrito en Python puro. El IDE usa
+PyQt6 y QScintilla, y ejecuta el compilador como un proceso aparte.
 
----
+## Estado
 
-## Monorepo layout
+| Fase | Estado | Qué produce |
+|---|---|---|
+| 1. Léxico | Terminada | Tabla de tokens |
+| 2. Sintáctico | Terminada | Árbol sintáctico (AST) |
+| 3. Semántico | Terminada | AST anotado, tabla de símbolos y recorrido del análisis |
+| 4. Código intermedio | Terminada | Código de tres direcciones, igual al del TINY de la materia |
+| 5. Ejecución | Pendiente | |
+
+## Estructura
 
 ```
 IDE/
-├── .venv/                 ← Shared virtual environment
-├── ArcaneIDE/             ← IDE application (PyQt6)
-│   ├── pyproject.toml
-│   └── src/
-│       ├── main.py
-│       ├── assets/
-│       ├── core/          ← Business logic (no UI)
-│       ├── ui/            ← Qt widgets
-│       └── utils/
-└── ArcaneCompiler/        ← Compiler package
-    ├── pyproject.toml
-    ├── src/
-    │   └── arcane_compiler/
-    │       ├── main.py        ← CLI entry point
-    │       ├── lexer/         ← Lexical analysis (DFA)
-    │       └── utils/         ← Output protocol helpers
-    └── tests/
-        ├── samples/       ← .c source files for testing
-        └── test_lexer.py
+├── .venv/                   entorno virtual compartido por los dos paquetes
+├── GRAMATICA.md             gramática, reglas semánticas y esquema del código intermedio
+├── PENDIENTES.md            fallas conocidas y limpieza pospuesta
+├── ArcaneCompiler/
+│   ├── src/arcane_compiler/
+│   │   ├── main.py          línea de comandos y orden de las fases
+│   │   ├── lexer/           análisis léxico (autómata, carácter por carácter)
+│   │   ├── parser/          análisis sintáctico (descenso recursivo) y construcción del AST
+│   │   ├── semantic/        análisis semántico, tipos y tabla de símbolos
+│   │   ├── intermediate/    código de tres direcciones
+│   │   └── utils/           formato de la salida
+│   └── tests/               pruebas (pytest); samples/ tiene los programas de ejemplo
+└── ArcaneIDE/src/
+    ├── main.py
+    ├── core/                ejecuta el compilador y maneja los archivos
+    ├── ui/                  ventana, editor y pestañas de resultados
+    └── utils/
 ```
 
----
+## Instalación
 
-## Setup
-
-> Run all commands from the repo root (`IDE/`).
+Desde la raíz del repo (`IDE/`), una sola vez:
 
 ```bash
-# 1. Create the shared virtual environment (only once)
-python3 -m venv .venv
-
-# 2. Activate it
-source .venv/bin/activate   # Linux / macOS
-# .venv\Scripts\activate    # Windows
-
-# 3. Install the IDE
-pip install -e "ArcaneIDE/"
-
-# 4. Install the compiler (+ dev dependencies for tests)
-pip install -e "ArcaneCompiler/[dev]"
+python -m venv .venv
+.venv/Scripts/python -m pip install -e "ArcaneCompiler/[dev]"
+.venv/Scripts/python -m pip install -e ArcaneIDE/
 ```
 
----
+En Linux o macOS cambia `.venv/Scripts/` por `.venv/bin/`. Los dos paquetes van en el mismo
+entorno porque el IDE ejecuta el compilador con su mismo Python.
 
-## Running the IDE
+## Usar el IDE
 
 ```bash
-# From the repo root, with the venv active:
 cd ArcaneIDE
-python -m src.main
+../.venv/Scripts/python -m src.main
 ```
 
-The IDE window appears. Open any `.c` file with the file explorer on the left, then use the toolbar or function keys to trigger compilation phases. Results appear in the tabbed panel at the bottom right.
+Abre un programa, por ejemplo `ArcaneCompiler/tests/samples/tiny/factorial.txt`, y compila
+con la barra de herramientas o con las teclas:
 
-| Key | Action |
-|-----|--------|
-| F5  | Lexical analysis |
-| F6  | Syntactic analysis |
-| F7  | Semantic analysis |
-| F8  | Intermediate code generation |
-| F9  | Execution |
+| Tecla | Fase |
+|---|---|
+| F5 | Léxico |
+| F6 | Sintáctico |
+| F7 | Semántico |
+| F8 | Código intermedio |
+| F9 | Ejecución (pendiente) |
 
----
+Cada fase corre también las anteriores, y el IDE guarda el archivo antes de compilar. Los
+resultados salen en las pestañas Tokens, Sintáctico, Semántico, Código Intermedio, Tabla de
+Símbolos, Errores y Ejecución. Los errores además se subrayan en el editor y su mensaje
+aparece al pasar el mouse.
 
-## Using the compiler standalone (without the IDE)
-
-The compiler is installed as the `arcane-compiler` command inside the shared `.venv`.
-
-### Syntax
-
-```
-arcane-compiler <source_file> <phase>
-```
-
-Valid phases: `lexical`, `syntactic`, `semantic`, `intermediate`, `execution`, `all`.
-
-### Examples
+## Usar el compilador desde la terminal
 
 ```bash
-# Activate the venv first
-source .venv/bin/activate
-
-# Run lexical analysis on a source file
-arcane-compiler ArcaneCompiler/tests/samples/valid_full.c lexical
-
-# Run all phases at once
-arcane-compiler my_program.c all
-
-# Pipe the token table to a file
-arcane-compiler my_program.c lexical > output.txt
+.venv/Scripts/python -m arcane_compiler.main <archivo> <fase>
 ```
 
-### Output format
-
-Every phase writes to stdout using this protocol — one section per compiler stage:
-
-```
-===LEXICO===
-LÍNEA  COL   TIPO                      VALOR
------  ---   ----                      -----
-1      1     KW_INT                    'int'
-...
-===END_LEXICO===
-===ERRORES===
-Error léxico en línea 3, columna 7: Carácter inválido: '@'
-===END_ERRORES===
-```
-
-The IDE reads this same stdout and distributes each section to its corresponding output tab.
-
-### Phases currently implemented
-
-| Phase flag | Status | Output section(s) |
-|------------|--------|-------------------|
-| `lexical`  | Implemented | `LEXICO`, `ERRORES` |
-| `syntactic` | Pending | `SINTACTICO` |
-| `semantic`  | Pending | `SEMANTICO` |
-| `intermediate` | Pending | `CODIGO_INTERMEDIO`, `TABLA_SIMBOLOS` |
-| `execution` | Pending | `EJECUCION` |
-| `all` | Partial | All sections (lexical complete) |
-
----
-
-## Running tests
+Con el entorno activado también funciona `arcane-compiler <archivo> <fase>`. Las fases son
+`lexical`, `syntactic`, `semantic`, `intermediate`, `execution` y `all`. Por ejemplo:
 
 ```bash
-# From the repo root, with the venv active:
-.venv/bin/pytest ArcaneCompiler/tests/ -v
+.venv/Scripts/python -m arcane_compiler.main ArcaneCompiler/tests/samples/tiny/factorial.txt intermediate
 ```
 
----
+La salida siempre trae siete secciones, en este orden, cada una entre `===NOMBRE===` y
+`===END_NOMBRE===`:
 
-## Features
+| Sección | Contenido |
+|---|---|
+| `LEXICO` | Tabla de tokens |
+| `SINTACTICO` | AST en JSON |
+| `SEMANTICO` | AST anotado y recorrido del análisis, en JSON |
+| `CODIGO_INTERMEDIO` | Código de tres direcciones, en el formato `.ci` de TINY |
+| `TABLA_SIMBOLOS` | Variables con tipo, dirección y líneas donde aparecen, en JSON |
+| `ERRORES` | Errores de cada fase y avisos, en JSON |
+| `EJECUCION` | Vacía mientras la fase 5 esté pendiente |
 
-- **Code editor** — QScintilla with line numbers, syntax highlighting, auto-indent.
-- **File explorer** — tree view, double-click to open.
-- **5 compilation phases** — triggered from toolbar or F5–F9.
-- **7 output tabs** — Tokens, Sintáctico, Semántico, Código Intermedio, Tabla de Símbolos, Errores, Ejecución.
-- **Themes** — 5 built-in themes including Tokyo Night.
-- **File management** — New, Open, Save, Save As, unsaved-changes prompt.
-- **Standalone compiler CLI** — `arcane-compiler` works independently of the IDE.
+Una fase solo corre si la anterior no tuvo errores. Si no corrió, su sección queda vacía y
+un aviso en `ERRORES` explica por qué. El compilador termina con código 0 aunque el programa
+tenga errores; solo devuelve 1 si se le llama mal.
 
----
+## Pruebas
 
-## Language supported
+```bash
+.venv/Scripts/python -m pytest ArcaneCompiler/tests/ -q
+```
 
-The compiler targets a C-like teaching language with:
+`tests/samples/tiny/` tiene los programas del TINY de la materia escritos en nuestro
+lenguaje. Cada `.ci` es la salida del `tiny.exe` de la maestra, y nuestro código intermedio
+debe ser igual línea por línea.
 
-- Types: `int`, `float`
-- Control flow: `if`/`else`, `while`, `do`/`while`, `switch`/`case`/`end`
-- I/O: `cin >>`, `cout <<`
-- Operators: arithmetic (`+ - * / % ^`), relational (`< <= > >= == !=`), logical (`&& || !` / `and or not`), increment/decrement (`++ --`)
-- Literals: integers, reals, strings, characters
-- Comments: line (`//`) and block (`/* */`)
+## El lenguaje
+
+```
+main {
+  int x, fact;
+  cin >> x;
+  if 0 < x then
+    fact = 1;
+    do
+      fact = fact * x;
+      x = x - 1;
+    until x == 0;
+    cout << fact;
+  end
+}
+```
+
+- **Tipos:** `int` (32 bits), `float` y `bool`. Las variables se declaran en el nivel de
+  `main`, no dentro de un `if` o de un ciclo.
+- **Sentencias:**
+  - asignación (`x = expr;`), `x++;` y `x--;`;
+  - `if c then … [else …] end`;
+  - `while c { … }` (o `while c … end`) y `do … until c;`;
+  - `cin >> x;`;
+  - `cout << expr;`, `cout << "texto" << expr;` y `cout << expr << "texto";`.
+- **Operadores**, de menor a mayor precedencia:
+  1. `||`
+  2. `&&`
+  3. `< <= > >= == !=`
+  4. `+ -`
+  5. `* / %`
+  6. `-` unario
+  7. `^`
+  8. `!`
+
+  `and`, `or` y `not` equivalen a `&&`, `||` y `!`.
+- **Comentarios:** `// …` y `/* … */`.
+
+La gramática completa, las reglas de tipos, los errores semánticos y el esquema del código
+intermedio están en [GRAMATICA.md](GRAMATICA.md).

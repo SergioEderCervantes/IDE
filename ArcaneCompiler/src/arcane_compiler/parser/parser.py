@@ -15,13 +15,6 @@ _FIRST_SENTENCIA = {
     TokenType.KW_CIN, TokenType.KW_COUT, TokenType.IDENTIFIER,
 }
 _FIRST_DECLARACION = _FIRST_TIPO | _FIRST_SENTENCIA
-_FIRST_COMPONENTE = {
-    TokenType.SYM_LPAREN,
-    TokenType.INTEGER, TokenType.REAL,
-    TokenType.IDENTIFIER,
-    TokenType.KW_TRUE, TokenType.KW_FALSE,
-    TokenType.OP_AND, TokenType.OP_OR, TokenType.OP_NOT,
-}
 _REL_OPS = {
     TokenType.OP_LT, TokenType.OP_LE,
     TokenType.OP_GT, TokenType.OP_GE,
@@ -39,7 +32,6 @@ _SYNC_SENTENCIA = {
     TokenType.KW_WHILE, TokenType.KW_IF, TokenType.KW_DO,
     TokenType.KW_CIN, TokenType.KW_COUT,
 }
-_SYNC_DECLARACION = _FIRST_TIPO | {TokenType.SYM_RBRACE}
 
 
 class ParseError(Exception):

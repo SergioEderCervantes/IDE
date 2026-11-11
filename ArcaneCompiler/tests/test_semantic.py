@@ -549,8 +549,8 @@ def test_recorrido():
 
 
 def test_samples_validos_sin_errores_semanticos():
-    for nombre in ["valid_full.c", "valid_simple.c", "valid_syntax_1.c",
-                   "valid_syntax_2.c", "valid_syntax_full.c"]:
+    for nombre in ["valid_full.txt", "valid_simple.txt", "valid_syntax_1.txt",
+                   "valid_syntax_2.txt", "valid_syntax_full.txt"]:
         res = _analizar((_SAMPLES / nombre).read_text(encoding="utf-8"))
         assert res.errores == [], (nombre, res.errores)
 

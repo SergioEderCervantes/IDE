@@ -4,35 +4,43 @@ from arcane_compiler.lexer.lexer import Lexer
 from arcane_compiler.lexer.token_type import TokenType
 
 
-def _build_line_offsets(text: str) -> list[int]:
-    """Retorna una lista donde el índice i contiene el offset de byte
-    donde empieza la línea i+1 en el texto."""
-    offsets = [0]
-    for i, ch in enumerate(text):
-        if ch == '\n':
-            offsets.append(i + 1)
-    return offsets
+# El Lexer da línea y columna en caracteres; QScintilla mide posiciones en bytes UTF-8.
+# Todo se calcula en caracteres y se convierte a bytes al final (con acentos o ñ cada
+# letra ocupa 2 bytes y, sin la conversión, los colores se recorrían).
+
+def _inicios_de_linea(texto: str) -> list[int]:
+    """Carácter donde empieza cada línea: el índice i corresponde a la línea i + 1."""
+    inicios = [0]
+    for i, ch in enumerate(texto):
+        if ch == "\n":
+            inicios.append(i + 1)
+    return inicios
 
 
-def _token_byte_length(token, full_text: str, line_offsets: list[int]) -> int:
-    """Calcula cuántos bytes ocupa el token en el source original.
-    Para STRING_LITERAL y CHAR_LITERAL agrega 2 (las comillas).
-    Para COMMENT_BLOCK el value ya incluye /* y */ así que usar len directo.
-    Para ERROR el value es un mensaje, no el texto fuente: se determina la
-    longitud real según el tipo de error.
-    Para el resto usar len(token.value).
-    """
+def _bytes_hasta(texto: str) -> list[int]:
+    """bytes_hasta[i] = bytes UTF-8 que ocupan los primeros i caracteres del texto."""
+    acumulado = [0]
+    total = 0
+    for ch in texto:
+        codigo = ord(ch)
+        total += 1 if codigo < 0x80 else 2 if codigo < 0x800 else 3 if codigo < 0x10000 else 4
+        acumulado.append(total)
+    return acumulado
+
+
+def _longitud(token, texto: str, inicio: int) -> int:
+    """Caracteres que ocupa el token en el texto, a partir de su posición `inicio`.
+    En un ERROR el value es el mensaje, no el texto fuente."""
     if token.type == TokenType.ERROR:
         if token.value.startswith("Carácter inválido:"):
-            return 1  
-        if token.value.startswith("Número inválido:"):
-            inner = token.value.split("'")[1]
-            return len(inner.encode("utf-8"))
-        # Tokens no cerrados (string, char, block comment): colorear hasta el final
-        token_start = line_offsets[token.line - 1] + (token.column - 1)
-        return len(full_text.encode("utf-8")) - token_start
+            return 1
+        if token.value.startswith("Comentario de bloque no cerrado"):
+            return len(texto) - inicio  # llega al final del archivo
+        # Cadena o carácter sin cerrar: el Lexer se detiene al final de la línea
+        fin_de_linea = texto.find("\n", inicio)
+        return (len(texto) if fin_de_linea == -1 else fin_de_linea) - inicio
     if token.type in (TokenType.STRING_LITERAL, TokenType.CHAR_LITERAL):
-        return len(token.value) + 2  # +2 por las comillas delimitadoras
+        return len(token.value) + 2  # las comillas
     return len(token.value)
 
 
@@ -133,49 +141,35 @@ class ArcaneLexer(QsciLexerCustom):
         if editor is None:
             return
 
-        full_text = editor.text()
+        texto = editor.text()
+        en_bytes = _bytes_hasta(texto)
+        total = en_bytes[-1]
 
         self.startStyling(0)
 
-        if not full_text.strip():
-            self.setStyling(len(full_text.encode("utf-8")), self.STYLE_DEFAULT)
+        if not texto.strip():
+            self.setStyling(total, self.STYLE_DEFAULT)
             return
 
-        lexer = Lexer(full_text)
-        tokens, errors = lexer.tokenize()
+        tokens, errores = Lexer(texto).tokenize()
+        inicios = _inicios_de_linea(texto)
 
-        all_tokens = sorted(tokens + errors, key=lambda t: (t.line, t.column))
-
-        line_offsets = _build_line_offsets(full_text)
-
-        total_bytes = len(full_text.encode("utf-8"))
-        current_byte_pos = 0
-        for token in all_tokens:
-            token_start = line_offsets[token.line - 1] + (token.column - 1)
-
-            # Skip tokens already covered by a previous spanning token
-            # (e.g. an unclosed-string ERROR that consumed to end-of-document)
-            if token_start < current_byte_pos:
+        actual = 0  # carácter hasta donde ya se aplicó estilo
+        for token in sorted(tokens + errores, key=lambda t: (t.line, t.column)):
+            inicio = inicios[token.line - 1] + token.column - 1
+            if inicio < actual:  # ya cubierto (p. ej. por un comentario sin cerrar)
                 continue
-
-            token_byte_len = _token_byte_length(token, full_text, line_offsets)
-            # Clamp so we never exceed document length
-            token_byte_len = min(token_byte_len, total_bytes - token_start)
-
-            if token_start > current_byte_pos:
-                gap = token_start - current_byte_pos
-                self.setStyling(gap, self.STYLE_DEFAULT)
-
-            style = self.TOKEN_TYPE_TO_STYLE.get(token.type, self.STYLE_DEFAULT)
-            self.setStyling(token_byte_len, style)
-            current_byte_pos = token_start + token_byte_len
-
-            if current_byte_pos >= total_bytes:
+            fin = min(inicio + _longitud(token, texto, inicio), len(texto))
+            if inicio > actual:
+                self.setStyling(en_bytes[inicio] - en_bytes[actual], self.STYLE_DEFAULT)
+            estilo = self.TOKEN_TYPE_TO_STYLE.get(token.type, self.STYLE_DEFAULT)
+            self.setStyling(en_bytes[fin] - en_bytes[inicio], estilo)
+            actual = fin
+            if actual >= len(texto):
                 break
 
-        remaining = total_bytes - current_byte_pos
-        if remaining > 0:
-            self.setStyling(remaining, self.STYLE_DEFAULT)
+        if total > en_bytes[actual]:
+            self.setStyling(total - en_bytes[actual], self.STYLE_DEFAULT)
 
     def apply_theme(self, theme_colors: dict) -> None:
         self._theme_colors = theme_colors
