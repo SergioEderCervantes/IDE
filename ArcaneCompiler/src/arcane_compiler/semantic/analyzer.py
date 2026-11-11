@@ -19,6 +19,12 @@ ejecución:
   - después de un if/else solo quedan los valores iguales en ambas ramas
   - en un ciclo, las variables que se asignan en el cuerpo no tienen valor (cambian en
     cada vuelta)
+
+Código que nunca se ejecuta: si la condición de un if o de un while tiene un valor
+conocido, la rama contraria (o el cuerpo del while que siempre es false) se sigue
+analizando, pero ahí no se reportan los errores que dependen del valor de una variable:
+`x = 0; if x != 0 then y = 10 / x; end` no tiene división entre cero. Los errores de tipos
+y los que salen solo de literales (`5 / 0`) se reportan siempre.
 """
 from __future__ import annotations
 import copy
@@ -52,6 +58,8 @@ class SemanticAnalyzer:
         self._errores: list[CompilerError] = []
         self._recorrido: list[dict] = []
         self._valores: dict[str, object] = {}  # nombre → último valor conocido
+        # Mientras se recorre código que nunca se ejecuta: el motivo (para la traza)
+        self._no_se_ejecuta: Optional[str] = None
 
         anotado = copy.deepcopy(ast)
         self._traza(anotado.line, "inicio", "tabla de símbolos vacía, memloc = 0")
@@ -160,19 +168,21 @@ class SemanticAnalyzer:
         try:
             nuevo = evaluar_binaria(operador, op.value, actual, uno, t)
         except ErrorConstante as e:
-            self._error_constante(node, str(e))
+            self._error_constante(node, str(e), depende_de_variables=True)
             return
         if nuevo is not None:
             self._asignar_valor(node, ident, nuevo)
 
     def _seleccion(self, node: ASTNode) -> None:
-        self._condicion("if", node, node.children[0])
+        siempre = self._condicion("if", node, node.children[0])
         antes = dict(self._valores)
-        self._sentencia(node.children[1])
+        self._rama(node.children[1], siempre is False,
+                   f"la condición del 'if' de la línea {node.line} siempre es false")
         rama_then = self._valores
         self._valores = dict(antes)
         for hijo in node.children[2:]:  # else (si lo hay; sin else, la rama es "antes")
-            self._sentencia(hijo)
+            self._rama(hijo, siempre is True,
+                       f"la condición del 'if' de la línea {node.line} siempre es true")
         # Solo se conserva el valor de las variables que valen lo mismo en ambas ramas
         self._valores = {
             nombre: v for nombre, v in rama_then.items()
@@ -182,8 +192,9 @@ class SemanticAnalyzer:
     def _iteracion(self, node: ASTNode) -> None:
         self._olvidar_en_ciclo(node, node.children[1])
         al_evaluar_condicion = dict(self._valores)
-        self._condicion("while", node, node.children[0])
-        self._sentencia(node.children[1])
+        siempre = self._condicion("while", node, node.children[0])
+        self._rama(node.children[1], siempre is False,
+                   f"la condición del 'while' de la línea {node.line} siempre es false")
         # Se sale del ciclo cuando la condición es falsa: mismo estado que al evaluarla
         self._valores = al_evaluar_condicion
 
@@ -199,7 +210,19 @@ class SemanticAnalyzer:
         if olvidadas:
             self._traza(ciclo.line, "valores", f"sin valor dentro del ciclo: {', '.join(olvidadas)}")
 
-    def _condicion(self, estructura: str, node: ASTNode, cond: ASTNode) -> None:
+    def _rama(self, cuerpo: ASTNode, no_se_ejecuta: bool, motivo: str) -> None:
+        """Analiza una rama de un if o el cuerpo de un while. Si nunca se ejecuta, se
+        recuerda el motivo mientras se recorre (ver _error_constante). Dentro de código
+        que ya no se ejecuta se conserva el primer motivo."""
+        previo = self._no_se_ejecuta
+        if no_se_ejecuta and previo is None:
+            self._no_se_ejecuta = motivo
+        self._sentencia(cuerpo)
+        self._no_se_ejecuta = previo
+
+    def _condicion(self, estructura: str, node: ASTNode, cond: ASTNode) -> Optional[bool]:
+        """Verifica que la condición sea bool. Devuelve su valor si se conoce en compilación
+        (la condición siempre es true o siempre es false), o None."""
         t = self._expresion(cond)
         error = tipos.condicion(estructura, t)
         if error:
@@ -208,6 +231,8 @@ class SemanticAnalyzer:
             veredicto = "✗" if error else "✓"
             node.attrs["verificacion"] = f"condición {t} {veredicto}"
             self._traza(cond.line, "condición", f"{estructura}: {t} {veredicto}")
+        valor = cond.attrs.get("valor")
+        return valor if t == Tipo.BOOL and isinstance(valor, bool) else None
 
     def _sent_in(self, node: ASTNode) -> None:
         self._identificador(node.children[0])
@@ -266,7 +291,7 @@ class SemanticAnalyzer:
             try:
                 valor = evaluar_unaria(node.kind, operando.attrs["valor"])
             except ErrorConstante as e:
-                return self._error_constante(node, str(e))
+                return self._error_constante(node, str(e), _usa_valor_de_variable(operando))
             if valor is not None:
                 node.attrs["valor"] = valor
         return r.tipo
@@ -296,20 +321,31 @@ class SemanticAnalyzer:
         if "valor" in der.attrs:
             error = error_operando_derecho(node.kind, node.value, tipo_operandos, der.attrs["valor"])
             if error:
-                return self._error_constante(node, error)
+                return self._error_constante(node, error, _usa_valor_de_variable(der))
 
         if "valor" in izq.attrs and "valor" in der.attrs:
             try:
                 valor = evaluar_binaria(node.kind, node.value, izq.attrs["valor"],
                                         der.attrs["valor"], tipo_operandos)
             except ErrorConstante as e:
-                return self._error_constante(node, str(e))
+                return self._error_constante(node, str(e), _usa_valor_de_variable(izq, der))
             if valor is not None:
                 node.attrs["valor"] = valor
         return r.tipo
 
-    def _error_constante(self, node: ASTNode, mensaje: str) -> Tipo:
-        """Expresión constante inválida (división entre cero, desbordamiento, ...)."""
+    def _error_constante(self, node: ASTNode, mensaje: str, depende_de_variables: bool) -> Tipo:
+        """Expresión constante inválida (división entre cero, desbordamiento, ...).
+
+        Si el error sale del valor de una variable y este código nunca se ejecuta
+        (`x = 0; if x != 0 then y = 10 / x; end`), el programa no tiene ese error: no se
+        reporta, queda en la traza y el nodo conserva su tipo, sin valor. Los errores que
+        salen solo de literales (`5 / 0`) se reportan aunque el código no se ejecute.
+        """
+        if depende_de_variables and self._no_se_ejecuta:
+            self._traza(node.line, "error omitido",
+                        f"{mensaje}: no se reporta porque {self._no_se_ejecuta} "
+                        f"y este código nunca se ejecuta")
+            return Tipo(node.attrs["tipo"])
         self._error(node, mensaje)
         node.attrs["tipo"] = Tipo.ERROR.value
         return Tipo.ERROR
@@ -365,6 +401,17 @@ def _asignadas(node: ASTNode) -> list[str]:
                 nombres.append(nombre)
         pendientes.extend(reversed(actual.children))
     return nombres
+
+
+def _usa_valor_de_variable(*nodos: ASTNode) -> bool:
+    """¿El valor de estos nodos sale (en parte) del valor conocido de alguna variable?"""
+    pendientes = list(nodos)
+    while pendientes:  # iterativo: el anidamiento puede ser muy profundo
+        actual = pendientes.pop()
+        if actual.kind == "IDENTIFIER" and "valor" in actual.attrs:
+            return True
+        pendientes.extend(actual.children)
+    return False
 
 
 def _mismo_valor(a, b) -> bool:

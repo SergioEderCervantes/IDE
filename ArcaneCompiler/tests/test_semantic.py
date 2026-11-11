@@ -406,6 +406,52 @@ def test_division_entre_variable_que_vale_cero():
     assert _errores("main { int x, y; x = 0; y = 5 / x; }") == ["división entre cero en '/'"]
 
 
+def test_codigo_que_no_se_ejecuta_no_reporta_errores_de_valores():
+    """Una guarda que nunca deja pasar el valor problemático no es un error del programa."""
+    casos = [
+        "main { int x, y; x = 0; if x != 0 then y = 10 / x; end }",
+        "main { int x, y; x = 1; if x > 0 then y = 1; else y = 5 / (x - 1); end }",
+        "main { int x, y; x = 0; while x != 0 { y = 10 / x; } }",
+        "main { int x; x = 2147483647; if x < 0 then x = x + 1; end }",
+        "main { int x; x = 2147483647; if x < 0 then x++; end }",
+        "main { int x, y; x = -1; if x > 0 then y = 2 ^ x; end }",
+        "main { int x, y; x = 0; if x != 0 then if true then y = 1 % x; end end }",
+    ]
+    for src in casos:
+        assert _errores(src) == [], src
+
+
+def test_codigo_que_si_se_ejecuta_sigue_reportando_errores_de_valores():
+    division = ["división entre cero en '/'"]
+    # La rama siempre se ejecuta
+    assert _errores("main { int x, y; x = 0; if x == 0 then y = 5 / x; end }") == division
+    # La condición depende de la ejecución (cin): la rama puede ejecutarse
+    assert _errores("main { int x, y, c; cin >> c; x = 0; if c > 0 then y = 5 / x; end }") == division
+    # El cuerpo de do … until siempre se ejecuta al menos una vez
+    assert _errores("main { int x, y; x = 0; do y = 5 / x; until true }") == division
+
+
+def test_codigo_que_no_se_ejecuta_sigue_reportando_tipos_y_literales():
+    assert _errores("main { int x; if false then x = 5 / 0; end }") == ["división entre cero en '/'"]
+    # El divisor es un literal: el error no depende del valor de x
+    assert _errores("main { int x, y; x = 0; if x != 0 then y = x / 0; end }") == [
+        "división entre cero en '/'"]
+    assert "constante entera fuera de rango" in _errores(
+        "main { int x; if false then x = 3000000000; end }")[0]
+    assert "conversión no válida" in _errores("main { int x; if false then x = 3.5; end }")[0]
+
+
+def test_error_omitido_queda_en_la_traza():
+    res = _analizar("main {\n int x, y;\n x = 0;\n if x != 0 then\n y = 10 / x;\n end }")
+    [omitido] = [t for t in res.recorrido if t["accion"] == "error omitido"]
+    assert omitido["linea"] == 5
+    assert "división entre cero en '/'" in omitido["detalle"]
+    assert "'if' de la línea 4 siempre es false" in omitido["detalle"]
+    asig_y = _sentencias(res)[-1].children[1].children[0]
+    assert asig_y.children[1].attrs == {"tipo": "int"}  # conserva su tipo, sin valor
+    assert asig_y.attrs["verificacion"] == "int ← int ✓"
+
+
 def test_division_entera_en_comparacion():
     cond = _sentencias(_analizar("main { if 7 / 2 > 3 then cout << 1; end }"))[0].children[0]
     assert cond.attrs == {"tipo": "bool", "valor": False}  # 7 / 2 = 3 (entera)

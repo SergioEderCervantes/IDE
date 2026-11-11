@@ -189,6 +189,14 @@ destino) `valor = 5`. Solo se guarda un valor cuando es el mismo en cualquier ej
 
 Con esto también se detectan errores como `x = 0; y = 5 / x;` (división entre cero).
 
+**Código que nunca se ejecuta.** Si la condición de un `if` o de un `while` tiene un valor
+conocido, la parte que nunca se ejecuta (el `then` de una condición siempre falsa, el `else`
+de una siempre verdadera o el cuerpo de un `while` siempre falso) se sigue analizando: ahí se
+reportan los errores de tipos y los de expresiones formadas solo por literales (`5 / 0`),
+pero no los que dependen del valor de una variable. Así, `x = 0; if x != 0 then y = 10 / x; end`
+no tiene errores. El error que no se reporta queda en la traza del recorrido (acción
+*error omitido*). El cuerpo de `do … until` siempre se ejecuta al menos una vez.
+
 ---
 
 ## 7. Reglas semánticas por producción

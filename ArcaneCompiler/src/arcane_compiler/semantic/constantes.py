@@ -1,8 +1,8 @@
 """Cálculo del atributo `valor` de expresiones constantes.
 
-Solo se evalúan operaciones cuyos operandos tienen valor conocido en compilación
-(literales y expresiones formadas por literales). Las variables no tienen valor:
-dependen de la ejecución (cin, ciclos, if).
+Solo se evalúan operaciones cuyos operandos tienen valor conocido en compilación:
+literales, expresiones formadas por literales y variables cuyo último valor se conoce
+(analyzer.py decide cuándo una variable tiene valor: cin, ciclos e if lo pueden borrar).
 
 Tamaño de los tipos:
   - int:   entero de 32 bits con signo (-2147483648 a 2147483647), como en C y Java.
