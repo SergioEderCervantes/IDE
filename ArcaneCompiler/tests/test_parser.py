@@ -456,3 +456,102 @@ def test_menos_unario_posicion():
 def test_menos_sin_operando_es_error():
     _, errors = _build("main { x = -; }")
     assert errors and "expresión inválida" in errors[0]
+
+
+# ─── Recuperación de errores ─────────────────────────────────────────────────
+# Un error de sintaxis se reporta una sola vez, con su línea, y el análisis sigue con el
+# resto del programa (sin errores en cascada ni sentencias perdidas).
+
+def _recuperacion(source: str):
+    """Errores (con posición) y sentencias de main después de la recuperación."""
+    tokens, _ = Lexer(source).tokenize()
+    parser = Parser(tokens)
+    cst = parser.parse()
+    lista = next(c for c in cst.children if c.kind == "lista_declaracion")
+    return parser.diagnostics, lista.children
+
+
+def _un_error(source: str, linea: int):
+    errores, sentencias = _recuperacion(source)
+    assert len(errores) == 1, [str(e) for e in errores]
+    assert errores[0].linea == linea, str(errores[0])
+    return errores[0], sentencias
+
+
+def test_token_suelto_no_corta_el_programa():
+    error, sentencias = _un_error(
+        "main {\n int x, y;\n x = 1;\n 5;\n y = 2;\n cout << y;\n}", linea=4)
+    assert "se esperaba una sentencia, se encontró '5'" in error.mensaje
+    assert [s.kind for s in sentencias] == [
+        "declaracion_variable", "asignacion", "asignacion", "sent_out"]
+
+
+def test_token_suelto_sin_punto_y_coma():
+    _, sentencias = _un_error("main {\n int x;\n 5\n x = 2;\n}", linea=3)
+    assert [s.kind for s in sentencias] == ["declaracion_variable", "asignacion"]
+
+
+def test_end_de_mas():
+    error, sentencias = _un_error("main {\n int x;\n x = 1;\n end\n x = 2;\n}", linea=4)
+    assert "se encontró 'end'" in error.mensaje
+    assert [s.kind for s in sentencias] == ["declaracion_variable", "asignacion", "asignacion"]
+
+
+def test_token_suelto_dentro_de_un_bloque():
+    _, sentencias = _un_error(
+        "main {\n int x;\n if x > 0 then\n 5;\n x = 1;\n end\n x = 2;\n}", linea=4)
+    assert [s.kind for s in sentencias] == ["declaracion_variable", "seleccion", "asignacion"]
+    entonces = sentencias[1].children[1]
+    assert [s.kind for s in entonces.children] == ["asignacion"]
+
+
+def test_declaracion_dentro_de_un_bloque():
+    error, sentencias = _un_error(
+        "main {\n int x;\n while x < 3 {\n int y;\n x = x + 1;\n }\n}", linea=4)
+    assert "solo pueden declararse al nivel de main" in error.mensaje
+    assert [s.kind for s in sentencias] == ["declaracion_variable", "iteracion"]
+
+
+@pytest.mark.parametrize("condicion", [
+    "if then", "if x > then", "if (x > ) then", "if x + * 2 then", "if 0 < while then",
+])
+def test_condicion_rota_del_if_no_se_traga_el_programa(condicion):
+    _, sentencias = _un_error(
+        f"main {{\n int x;\n {condicion}\n x = 1;\n end\n x = 2;\n cout << x;\n}}", linea=3)
+    assert [s.kind for s in sentencias] == [
+        "declaracion_variable", "seleccion", "asignacion", "sent_out"]
+    assert [s.kind for s in sentencias[1].children[-1].children] == ["asignacion"]
+
+
+@pytest.mark.parametrize("sentencia", [
+    "x = 5 + ;",
+    "x = 5 + * 3;",
+    "x = (5 + ) * 2;",
+    "x = 5 + while - 1;",
+    "x = a ++ b;",
+    "x = a ++ b * 2;",
+    "y ( = 2 + 3;",
+    "cout << * ;",
+    "cout << 1 while ;",
+    "cout x << y;",
+    "cin >> 5;",
+])
+def test_sentencia_rota_un_error_y_sigue(sentencia):
+    _, sentencias = _un_error(
+        f"main {{\n int x, y, a, b;\n {sentencia}\n x = 2;\n}}", linea=3)
+    assert sentencias[-1].kind == "asignacion" and sentencias[-1].line == 4
+
+
+@pytest.mark.parametrize("fuente, linea", [
+    ("main {\n int x;\n while x > {\n x = 1;\n }\n x = 2;\n}", 3),
+    ("main {\n int x;\n while int c < 10\n x = 1;\n end\n x = 2;\n}", 3),
+    ("main {\n int x;\n do\n x = 1;\n until x > ;\n x = 2;\n}", 5),
+])
+def test_condicion_rota_de_ciclos(fuente, linea):
+    _, sentencias = _un_error(fuente, linea)
+    assert sentencias[-1].kind == "asignacion"
+
+
+def test_until_roto_al_final_no_se_come_la_llave():
+    errores, _ = _recuperacion("main { int x; do x = 1; until x > }")
+    assert len(errores) == 1 and errores[0].linea == 1, [str(e) for e in errores]

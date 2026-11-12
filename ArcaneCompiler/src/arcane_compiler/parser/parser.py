@@ -25,12 +25,25 @@ _SUMA_OPS = {TokenType.OP_PLUS, TokenType.OP_MINUS}
 _MULT_OPS = {
     TokenType.OP_MULTIPLY, TokenType.OP_DIVIDE, TokenType.OP_MODULO,
 }
-# Tokens de sincronización para recuperación de errores
-_SYNC_EXPRESION = {TokenType.SYM_SEMICOLON, TokenType.SYM_RPAREN, TokenType.KW_END}
-_SYNC_SENTENCIA = {
-    TokenType.SYM_SEMICOLON, TokenType.KW_END, TokenType.KW_UNTIL,
-    TokenType.KW_WHILE, TokenType.KW_IF, TokenType.KW_DO,
+# ─── Recuperación de errores (modo pánico) ───────────────────────────────────
+# Quien detecta el error lo reporta sin consumir nada; quien atrapa el ParseError descarta
+# tokens hasta uno de sincronización de su contexto (el 'if' hasta su 'then', la
+# asignación hasta su ';') y el análisis sigue desde ahí.
+
+# Tokens que nunca forman parte de una expresión: ahí termina una expresión con error
+_FIN_EXPRESION = _FIRST_TIPO | {
+    TokenType.SYM_SEMICOLON, TokenType.SYM_LBRACE, TokenType.SYM_RBRACE,
+    TokenType.KW_THEN, TokenType.KW_END, TokenType.KW_ELSE, TokenType.KW_UNTIL,
+    TokenType.KW_IF, TokenType.KW_WHILE, TokenType.KW_DO,
     TokenType.KW_CIN, TokenType.KW_COUT,
+    TokenType.OP_SHIFT_LEFT, TokenType.OP_SHIFT_RIGHT,
+}
+# Tokens que cierran una lista de sentencias; los consume quien abrió el bloque
+_FIN_BLOQUE = {TokenType.KW_END, TokenType.KW_ELSE, TokenType.KW_UNTIL, TokenType.SYM_RBRACE}
+# Tokens con los que puede empezar un operando
+_INICIO_OPERANDO = {
+    TokenType.INTEGER, TokenType.REAL, TokenType.IDENTIFIER,
+    TokenType.KW_TRUE, TokenType.KW_FALSE, TokenType.SYM_LPAREN, TokenType.OP_NOT,
 }
 
 
@@ -124,6 +137,52 @@ class Parser:
                 return
             self._advance()
 
+    def _saltar_en_linea(self, linea: int, objetivo: set[TokenType]) -> bool:
+        """Si el token actual está en `linea` y más adelante en esa misma línea hay un
+        token de `objetivo`, descarta hasta él y devuelve True (un ')' buscado es el que
+        cierra al nivel actual, no el de un paréntesis abierto después). Un error casi
+        nunca cruza de línea: lo que hay en medio es basura de la misma sentencia, aunque
+        sean palabras clave como 'while' o 'else'."""
+        tok = self._current()
+        if tok is None or tok.line != linea:
+            return False
+        k, nivel = self._pos, 0
+        while k < len(self._tokens) and self._tokens[k].line == linea:
+            tipo = self._tokens[k].type
+            if tipo in objetivo and (tipo != TokenType.SYM_RPAREN or nivel == 0):
+                self._pos = k
+                return True
+            if tipo == TokenType.SYM_LPAREN:
+                nivel += 1
+            elif tipo == TokenType.SYM_RPAREN and nivel > 0:
+                nivel -= 1
+            k += 1
+        return False
+
+    def _recuperar(self, linea: int, objetivo: set[TokenType], conjunto: set[TokenType],
+                   resto_de_linea: bool = False) -> None:
+        """Tras un error en una expresión: descarta hasta el `objetivo` de la construcción
+        (su ';', su 'then', su ')') si está en la misma línea donde empezó. Si no está y
+        `resto_de_linea` (condición de un while o un until, que termina la línea), descarta
+        el resto de la línea; si no, hasta un token de `conjunto`."""
+        if self._saltar_en_linea(linea, objetivo):
+            return
+        if resto_de_linea and self._current() is not None and self._current().line == linea:
+            # Sin cruzar un cierre de bloque ('}', 'end'...) que esté en esa misma línea
+            while (not self._is_at_end() and self._current().line == linea
+                   and self._current().type not in _FIN_BLOQUE):
+                self._advance()
+            return
+        self._sync_to(conjunto)
+
+    def _esperar(self, node: ASTNode, ttype: TokenType, linea: int, msg: str) -> None:
+        """Token obligatorio de una construcción que empezó en `linea` (';', '=', 'then'...).
+        Si falta pero aparece más adelante en la misma línea, lo de en medio es basura: se
+        reporta un solo error, se descarta y se consume el token."""
+        if not self._expect_node(node, ttype, msg):
+            if self._saltar_en_linea(linea, {ttype}):
+                self._advance()
+
     def _make_token_node(self, token: Token) -> ASTNode:
         return ASTNode(
             kind=token.type.name,
@@ -176,12 +235,14 @@ class Parser:
         if tok:
             node.line, node.col = tok.line, tok.column
 
-        while not self._is_at_end() and self._current_is(*_FIRST_DECLARACION):
-            if self._current_is(TokenType.SYM_RBRACE):
-                break
-            decl = self._parse_declaracion()
-            if decl:
-                node.add(decl)
+        # Termina en el '}' de main (o al final del archivo)
+        while not self._is_at_end() and not self._current_is(TokenType.SYM_RBRACE):
+            if self._current_is(*_FIRST_DECLARACION):
+                decl = self._parse_declaracion()
+                if decl:
+                    node.add(decl)
+            else:
+                self._saltar_sentencia_invalida()
 
         return node
 
@@ -209,7 +270,7 @@ class Parser:
         id_list = self._parse_id_list()
         node.add(id_list)
 
-        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';' al final de declaración")
+        self._esperar(node, TokenType.SYM_SEMICOLON, tok.line, "se esperaba ';' al final de declaración")
         return node
 
     def _parse_tipo(self) -> ASTNode:
@@ -243,13 +304,39 @@ class Parser:
         if tok:
             node.line, node.col = tok.line, tok.column
 
-        # Termina en cualquier token fuera de FIRST(sentencia): end, else, until, }
-        while not self._is_at_end() and self._current_is(*_FIRST_SENTENCIA):
-            sent = self._parse_sentencia()
-            if sent:
-                node.add(sent)
+        # Termina en end, else, until o } (o al final del archivo)
+        while not self._is_at_end() and not self._current_is(*_FIN_BLOQUE):
+            if self._current_is(*_FIRST_SENTENCIA):
+                sent = self._parse_sentencia()
+                if sent:
+                    node.add(sent)
+            else:
+                self._saltar_sentencia_invalida()
 
         return node
+
+    def _saltar_sentencia_invalida(self) -> None:
+        """Token que no puede iniciar una sentencia (`5;`, un `end` de más...): se reporta
+        una sola vez y se descarta el resto de esa sentencia, hasta su ';' o hasta donde
+        probablemente empieza la siguiente (una palabra clave, un fin de bloque o un
+        identificador en otra línea). Así el análisis sigue sin errores en cascada."""
+        tok = self._advance()
+        if tok.type in _FIRST_TIPO:
+            self._error(tok, "las variables solo pueden declararse al nivel de main, "
+                             "no dentro de un bloque")
+        else:
+            self._error(tok, f"se esperaba una sentencia, se encontró '{tok.value}' ({tok.type.name})")
+
+        while not self._is_at_end():
+            sig = self._current()
+            if sig.type == TokenType.SYM_SEMICOLON:
+                self._advance()
+                return
+            if (sig.type in _FIN_BLOQUE
+                    or (sig.type in _FIRST_DECLARACION and sig.type != TokenType.IDENTIFIER)
+                    or (sig.type == TokenType.IDENTIFIER and sig.line > tok.line)):
+                return
+            self._advance()
 
     def _parse_sentencia(self) -> Optional[ASTNode]:
         tok = self._current()
@@ -273,7 +360,7 @@ class Parser:
             return self._parse_asignacion()
         else:
             self._error(tok, f"sentencia inesperada con '{tok.value}'")
-            self._sync_to(_SYNC_SENTENCIA)
+            self._sync_to(_FIN_EXPRESION)
             return None
 
     def _parse_incremento(self) -> ASTNode:
@@ -286,7 +373,7 @@ class Parser:
             node.add(self._make_token_node(id_tok))
         if self._current_is(TokenType.OP_INCREMENT, TokenType.OP_DECREMENT):
             node.add(self._make_token_node(self._advance()))
-        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._esperar(node, TokenType.SYM_SEMICOLON, tok.line, "se esperaba ';'")
         return node
 
     def _parse_asignacion(self) -> ASTNode:
@@ -299,14 +386,15 @@ class Parser:
         if id_tok:
             node.add(self._make_token_node(id_tok))
 
-        self._expect_node(node, TokenType.OP_ASSIGN, "se esperaba '='")
+        self._esperar(node, TokenType.OP_ASSIGN, tok.line, "se esperaba '='")
 
-        sent_expr = self._parse_sent_expresion()
+        sent_expr = self._parse_sent_expresion(tok.line)
         node.add(sent_expr)
 
         return node
 
-    def _parse_sent_expresion(self) -> ASTNode:
+    def _parse_sent_expresion(self, linea: int) -> ASTNode:
+        """`linea`: donde empezó la asignación (para la recuperación de errores)."""
         node = ASTNode(kind="sent_expresion")
         tok = self._current()
         if tok:
@@ -320,9 +408,9 @@ class Parser:
             expr = self._parse_expresion()
             node.add(expr)
         except ParseError:
-            self._sync_to(_SYNC_EXPRESION)
+            self._recuperar(linea, {TokenType.SYM_SEMICOLON}, _FIN_EXPRESION)
 
-        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._esperar(node, TokenType.SYM_SEMICOLON, linea, "se esperaba ';'")
         return node
 
     def _parse_seleccion(self) -> ASTNode:
@@ -337,9 +425,10 @@ class Parser:
             expr = self._parse_expresion()
             node.add(expr)
         except ParseError:
-            self._sync_to({TokenType.KW_THEN})
+            # Hasta su 'then' (o antes, si falta) sin cruzar a otra sentencia
+            self._recuperar(tok.line, {TokenType.KW_THEN}, _FIN_EXPRESION)
 
-        self._expect_node(node, TokenType.KW_THEN, "se esperaba 'then'")
+        self._esperar(node, TokenType.KW_THEN, tok.line, "se esperaba 'then'")
 
         then_body = self._parse_lista_sentencias()
         node.add(then_body)
@@ -386,7 +475,9 @@ class Parser:
             expr = self._parse_expresion()
             node.add(expr)
         except ParseError:
-            self._sync_to(_FIRST_SENTENCIA | {TokenType.KW_END, TokenType.SYM_LBRACE})
+            # El cuerpo empieza con '{' o, sin llaves, en la línea siguiente
+            self._recuperar(tok.line, {TokenType.SYM_LBRACE}, _FIN_EXPRESION | _FIRST_SENTENCIA,
+                            resto_de_linea=True)
 
         self._parse_cuerpo(node, TokenType.KW_END, "se esperaba 'end'")
 
@@ -404,13 +495,16 @@ class Parser:
 
         self._parse_cuerpo(node)
 
+        until_tok = self._current()
         self._expect_node(node, TokenType.KW_UNTIL, "se esperaba 'until'")
 
         try:
             expr = self._parse_expresion()
             node.add(expr)
         except ParseError:
-            self._sync_to(_SYNC_SENTENCIA)
+            # La condición del until termina la sentencia: hasta su ';' o el fin de la línea
+            linea = until_tok.line if until_tok else 0
+            self._recuperar(linea, {TokenType.SYM_SEMICOLON}, _FIN_EXPRESION, resto_de_linea=True)
 
         self._skip_optional(TokenType.SYM_SEMICOLON)  # do ... until x; es aceptado
         return node
@@ -422,13 +516,16 @@ class Parser:
             node.line, node.col = tok.line, tok.column
 
         self._expect(TokenType.KW_CIN, "se esperaba 'cin'")
-        self._expect_node(node, TokenType.OP_SHIFT_RIGHT, "se esperaba '>>'")
+        self._esperar(node, TokenType.OP_SHIFT_RIGHT, tok.line, "se esperaba '>>'")
 
         id_tok = self._expect(TokenType.IDENTIFIER, "se esperaba identificador")
         if id_tok:
             node.add(self._make_token_node(id_tok))
+        else:
+            # 'cin >> 5;': lo que haya hasta el ';' de la línea es parte del mismo error
+            self._saltar_en_linea(tok.line, {TokenType.SYM_SEMICOLON})
 
-        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._esperar(node, TokenType.SYM_SEMICOLON, tok.line, "se esperaba ';'")
         return node
 
     def _parse_sent_out(self) -> ASTNode:
@@ -438,15 +535,16 @@ class Parser:
             node.line, node.col = tok.line, tok.column
 
         self._expect(TokenType.KW_COUT, "se esperaba 'cout'")
-        self._expect_node(node, TokenType.OP_SHIFT_LEFT, "se esperaba '<<'")
+        self._esperar(node, TokenType.OP_SHIFT_LEFT, tok.line, "se esperaba '<<'")
 
-        salida = self._parse_salida()
+        salida = self._parse_salida(tok.line)
         node.add(salida)
 
-        self._expect_node(node, TokenType.SYM_SEMICOLON, "se esperaba ';'")
+        self._esperar(node, TokenType.SYM_SEMICOLON, tok.line, "se esperaba ';'")
         return node
 
-    def _parse_salida(self) -> ASTNode:
+    def _parse_salida(self, linea: int) -> ASTNode:
+        """`linea`: donde empezó el cout (para la recuperación de errores)."""
         node = ASTNode(kind="salida")
         tok = self._current()
         if tok:
@@ -461,13 +559,13 @@ class Parser:
                     expr = self._parse_expresion()
                     node.add(expr)
                 except ParseError:
-                    self._sync_to(_SYNC_SENTENCIA)
+                    self._recuperar(linea, {TokenType.SYM_SEMICOLON}, _FIN_EXPRESION)
         else:
             try:
                 expr = self._parse_expresion()
                 node.add(expr)
             except ParseError:
-                self._sync_to(_SYNC_SENTENCIA)
+                self._recuperar(linea, {TokenType.SYM_SEMICOLON}, _FIN_EXPRESION)
             if self._current_is(TokenType.OP_SHIFT_LEFT):
                 self._advance()
                 str_tok = self._expect(TokenType.STRING_LITERAL, "se esperaba cadena de texto")
@@ -615,6 +713,10 @@ class Parser:
                 f"'{tok.value}' solo puede usarse como sentencia (x{tok.value};), "
                 f"no dentro de una expresión",
             )
+            if self._current_is(*_INICIO_OPERANDO):
+                # 'a ++ b': la 'b' ya no se puede unir a la expresión. Se descarta el resto
+                # para no tomarla como el inicio de otra sentencia
+                self._sync_to(_FIN_EXPRESION | {TokenType.SYM_RPAREN})
 
     def _parse_componente(self) -> ASTNode:
         tok = self._current()
@@ -638,7 +740,9 @@ class Parser:
                 expr = self._parse_expresion()
                 node.add(expr)
             except ParseError:
-                self._sync_to({TokenType.SYM_RPAREN})
+                # Hasta su ')', sin cruzar el fin de la expresión si el ')' falta
+                self._recuperar(tok.line, {TokenType.SYM_RPAREN},
+                                _FIN_EXPRESION | {TokenType.SYM_RPAREN})
             self._expect_node(node, TokenType.SYM_RPAREN, "se esperaba ')'")
             return node
 
@@ -650,7 +754,8 @@ class Parser:
         ):
             return self._make_token_node(self._advance())
 
-        # No es un componente válido
+        # No es un componente válido. No se consume nada: quien atrapa el ParseError se
+        # sincroniza según su contexto (si aquí se saltaran tokens, un 'if x > then'
+        # perdería su 'then')
         self._error(tok, f"expresión inválida con '{tok.value}' ({tok.type.name})")
-        self._sync_to(_SYNC_EXPRESION)
         raise ParseError(f"Invalid componente at {tok.line}:{tok.column}")

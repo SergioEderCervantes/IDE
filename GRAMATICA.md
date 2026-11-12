@@ -124,6 +124,17 @@ Ejemplos: `a || b && c` = `a || (b && c)`; `2 ^ 3 ^ 2` = `2 ^ (3 ^ 2)` = 512;
 - **`;` opcional** después de `end`, `}` y la condición de `until`.
 - **Un solo ámbito.** Las declaraciones solo pueden ir en `lista_declaracion` (nivel de
   `main`), no dentro de `if`/`while`/`do`, que contienen `lista_sentencias`.
+- **Recuperación de errores (modo pánico).** Cada error de sintaxis se reporta una vez, con
+  su línea y columna, y el análisis sigue con el resto del programa:
+  - Quien detecta el error no descarta nada. La construcción que lo atrapa descarta tokens
+    hasta su propio punto de sincronización: el `if` hasta su `then`, la asignación hasta
+    su `;`, el paréntesis hasta su `)`.
+  - Un error casi nunca cruza de línea. Si ese punto aparece más adelante en la misma
+    línea, todo lo de en medio se toma como basura de esa sentencia, aunque sean palabras
+    clave. Si no aparece, el descarte se detiene en el primer token que no puede formar
+    parte de una expresión (`;`, `then`, `end`, `{`, una palabra clave…).
+  - Un token que no puede iniciar una sentencia (`5;`, un `end` de más) se reporta y se
+    descarta hasta el `;` de esa sentencia o hasta donde empieza la siguiente.
 
 ---
 
