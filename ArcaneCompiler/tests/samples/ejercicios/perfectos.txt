@@ -1,0 +1,20 @@
+// Repetitivo: números perfectos menores o iguales que N
+main {
+  int n, i, d, suma;
+  cin >> n;
+  i = 2;
+  while i <= n {
+    suma = 0;
+    d = 1;
+    while d < i {
+      if i % d == 0 then
+        suma = suma + d;
+      end
+      d++;
+    }
+    if suma == i then
+      cout << i;
+    end
+    i++;
+  }
+}

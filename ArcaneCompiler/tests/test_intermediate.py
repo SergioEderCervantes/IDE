@@ -1,8 +1,9 @@
 """Fase 4: código intermedio de tres direcciones.
 
 Los ejemplos de samples/tiny/ son los programas del TINY de la materia (Tiny_Intermedio_TM)
-escritos en nuestro lenguaje. Cada .ci es la salida del tiny.exe de la maestra para el
-.tny original: nuestro código debe ser igual línea por línea (sin contar los comentarios).
+escritos en nuestro lenguaje. Cada esperado/*.ci es la salida del tiny.exe de la maestra
+para el .tny original: nuestro código debe ser igual línea por línea (sin contar los
+comentarios). Están en esperado/ porque el compilador escribe su propio .ci junto al fuente.
 """
 import json
 import subprocess
@@ -16,6 +17,7 @@ from arcane_compiler.intermediate import cuadruplos as c
 from arcane_compiler.main import compile_source
 
 _TINY = Path(__file__).parent / "samples" / "tiny"
+_ESPERADO = _TINY / "esperado"
 _SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 
 
@@ -42,7 +44,7 @@ def _codigo(cuerpo: str) -> list[str]:
 @pytest.mark.parametrize("nombre", ["aritmetica", "ciclo", "condicional", "factorial", "anidado"])
 def test_igual_al_tiny_de_la_materia(nombre):
     fuente = (_TINY / f"{nombre}.txt").read_text(encoding="utf-8")
-    esperado = _lineas((_TINY / f"{nombre}.ci").read_text(encoding="utf-8"))
+    esperado = _lineas((_ESPERADO / f"{nombre}.ci").read_text(encoding="utf-8"))
     assert _lineas(_intermedio(fuente).texto()) == esperado
 
 
@@ -271,6 +273,6 @@ def test_cli_seccion_codigo_intermedio():
     assert proc.returncode == 0
     inicio = salida.index("===CODIGO_INTERMEDIO===\n") + len("===CODIGO_INTERMEDIO===\n")
     seccion = salida[inicio:salida.index("===END_CODIGO_INTERMEDIO===")]
-    assert _lineas(seccion) == _lineas((_TINY / "aritmetica.ci").read_text(encoding="utf-8"))
+    assert _lineas(seccion) == _lineas((_ESPERADO / "aritmetica.ci").read_text(encoding="utf-8"))
     errores = json.loads(salida.split("===ERRORES===\n")[1].split("===END_ERRORES===")[0])
     assert errores["avisos"] == []

@@ -9,6 +9,7 @@ _FASES = [
     ("lexico", "Léxicos"),
     ("sintactico", "Sintácticos"),
     ("semantico", "Semánticos"),
+    ("generacion", "Generación"),  # lo que la máquina TM no puede representar
 ]
 
 

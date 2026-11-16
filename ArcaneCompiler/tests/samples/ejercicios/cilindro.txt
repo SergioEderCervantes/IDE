@@ -1,0 +1,11 @@
+// Secuencial: área y volumen de un cilindro dados el radio y la altura
+main {
+  float radio, altura, area, volumen, pi;
+  pi = 3.1416;
+  cin >> radio;
+  cin >> altura;
+  area = 2 * pi * radio * altura;
+  volumen = pi * radio ^ 2 * altura;
+  cout << area;
+  cout << volumen;
+}

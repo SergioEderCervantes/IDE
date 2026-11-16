@@ -1,0 +1,12 @@
+// Selectivo: 1 si los tres números están en orden creciente, 0 si no
+main {
+  int a, b, c;
+  cin >> a;
+  cin >> b;
+  cin >> c;
+  if a < b && b < c then
+    cout << 1;
+  else
+    cout << 0;
+  end
+}

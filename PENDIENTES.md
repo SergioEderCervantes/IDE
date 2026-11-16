@@ -1,7 +1,7 @@
 # Pendientes
 
-Fases 1 a 4 terminadas (la 4, código intermedio, el 11/11/2026). Lo siguiente no bloquea la
-fase 5 y queda para después. Los tiempos son estimados de implementación y prueba.
+Fases 1 a 4 y la entrega final (código TM y ejecución en el simulador) terminadas. Lo
+siguiente queda para después. Los tiempos son estimados de implementación y prueba.
 
 ## Bugs que no bloquean
 

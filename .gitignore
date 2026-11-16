@@ -12,3 +12,12 @@ CompiladoresII_*.pdf
 
 # Entregables de las fases (no versionar)
 entrega/
+EjericiosFinalesCompisII.pdf
+Entrega_Final_Proyecto_Compiladores_II_UAA.pdf
+
+# Salidas del compilador (programa.ci y programa.tm junto a cada fuente), salvo las de
+# referencia de la materia
+*.ci
+*.tm
+!ArcaneCompiler/tests/samples/tiny/esperado/*.ci
+!ArcaneCompiler/tests/samples/tiny/esperado/*.tm

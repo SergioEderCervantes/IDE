@@ -1,0 +1,13 @@
+// Repetitivo: cuántos ceros hay entre los números leídos hasta un -1
+main {
+  int n, ceros;
+  ceros = 0;
+  cin >> n;
+  while n != -1 {
+    if n == 0 then
+      ceros++;
+    end
+    cin >> n;
+  }
+  cout << ceros;
+}

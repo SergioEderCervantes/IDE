@@ -15,7 +15,8 @@ _CARACTERES_PALABRA = "_."               # además de letras y dígitos: x, suma
 _CARACTERES_OPERADOR = "+-*/%^<>=!&|"    # ==, <=, &&, >> se subrayan completos
 
 # Llave del JSON de ERRORES → nombre de la fase en el mensaje
-_FASES = {"lexico": "léxico", "sintactico": "sintáctico", "semantico": "semántico"}
+_FASES = {"lexico": "léxico", "sintactico": "sintáctico", "semantico": "semántico",
+          "generacion": "de generación"}
 
 
 class EditorWidget(QsciScintilla):
@@ -153,7 +154,7 @@ class EditorWidget(QsciScintilla):
     # ─── Marcas de errores de compilación ────────────────────────────────────
 
     def marcar_errores(self, errores: Optional[dict]) -> None:
-        """Marca en el código los errores de la sección ERRORES (las tres fases).
+        """Marca en el código los errores de la sección ERRORES (todas las fases).
 
         Cada error con posición subraya la palabra (o el operador) donde empieza y pone
         un punto en el margen de su línea. Un error sin posición (fin de archivo) solo

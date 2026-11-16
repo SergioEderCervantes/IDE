@@ -7,6 +7,7 @@ from typing import Optional
 LEXICO = "léxico"
 SINTACTICO = "sintáctico"
 SEMANTICO = "semántico"
+GENERACION = "de generación"  # código TM: lo que la máquina TM no puede representar
 
 
 @dataclass(frozen=True)

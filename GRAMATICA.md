@@ -3,7 +3,7 @@
 Gramática vigente del compilador (analizador sintáctico de `ArcaneCompiler`) y reglas
 semánticas asociadas a cada producción. Es la referencia para la fase 3 (análisis
 semántico) y para su documento técnico. La sección 11 describe el código intermedio de la
-fase 4.
+fase 4 y la sección 12, el código para la máquina TM de la entrega final.
 
 ---
 
@@ -319,8 +319,8 @@ en lugar de detener el compilador.
 La fase 4 recorre el AST anotado (con sus nodos `CONV`) y produce una lista de cuádruplos
 `(op, arg1, arg2, resultado)`. El texto sigue el formato del archivo `.ci` del TINY de la
 materia (`Tiny_Intermedio_TM`, `intermedio.c`): un programa de TINY escrito igual en este
-lenguaje da el mismo código línea por línea (pruebas en `tests/samples/tiny/`). Solo se
-genera si el análisis semántico no tuvo errores.
+lenguaje da el mismo código línea por línea (los `.ci` de referencia están en
+`tests/samples/tiny/esperado/`). Solo se genera si el análisis semántico no tuvo errores.
 
 **Instrucciones:**
 
@@ -387,3 +387,134 @@ main {                              read x
                                     label L1
                                     halt
 ```
+
+---
+
+## 12. Código para la máquina TM (entrega final)
+
+El generador de código TM recorre el mismo AST anotado que la fase 4. El `.ci` y el `.tm`
+salen por caminos paralelos, como en el TINY de la materia, y la TM no lee el `.ci`.
+Solo se genera si el análisis semántico no tuvo errores. Los dos módulos tienen el papel de
+los archivos de Louden:
+
+| Nuestro módulo | TINY | Qué hace |
+|---|---|---|
+| `tm/cgen.py` | `cgen.c` | Recorre el árbol y decide qué instrucciones generar (`genStmt`, `genExp`) |
+| `tm/code.py` | `code.c`, `code.h` | Registros, formato de cada instrucción y resolución de saltos (`emit_ro`, `emit_rm`, `emit_skip`, `emit_backup`, `emit_restore`, `emit_rm_abs`) |
+| Tabla de símbolos | `st_lookup` | Dirección de cada variable (`direccion` = `memloc` de TINY) |
+
+Un programa de TINY escrito igual en este lenguaje da el mismo `.tm` que el `tiny.exe` de
+la materia, línea por línea. Solo cambia el comentario `* File:`. Los archivos de
+referencia están en `tests/samples/tiny/esperado/`. Las pruebas (`test_tm.py`) también
+ejecutan el código en el simulador real y revisan lo que imprime.
+
+**La máquina.** `TM/tm.c` es el simulador de la materia con una extensión para números
+reales (los cambios están marcados con `EXTENSION` en el código):
+
+| Cambio | Original | Extendido |
+|---|---|---|
+| Registros y memoria de datos | `int` | `double` |
+| `LDC r,d(s)` | `d` entero | `d` puede tener decimales (`LDC 0,7.59(0)`) |
+| `IN r` | Lee un entero (aceptaba `2.5` como 2) | Lee un entero; con decimales responde `Illegal value` y vuelve a preguntar |
+| `INR r` | (no existe) | Lee un número real: `Ingrese un numero real (INR):` |
+| `DIV r,s,t` | División entera | Igual: divide y trunca hacia cero |
+| `DIVR r,s,t` | (no existe) | División real |
+| `OUT`, comandos `r` y `d` | `%d` | Sin decimales si el valor es entero, con decimales si no |
+
+Un programa de solo enteros se ejecuta igual y la consola se ve igual que con el `tm.c`
+original (las pruebas lo comparan). La única diferencia es que un entero que pasa de 32 bits
+ya no da un valor sin sentido, porque los registros son `double`. Hay 8 registros, 1024
+direcciones de instrucciones y 1024 de datos.
+
+| Registro | Nombre | Uso |
+|---|---|---|
+| 7 | `pc` | Contador del programa |
+| 6 | `mp` | Tope de la memoria: los temporales están en `0(6)`, `-1(6)`, `-2(6)`… |
+| 5 | `gp` | Inicio de la memoria: la variable con dirección `d` está en `d(5)` |
+| 0 | `ac` | Acumulador: cada expresión deja ahí su resultado |
+| 1 | `ac1` | Segundo acumulador: el operando izquierdo |
+| 2 | `ac2` | Auxiliar de `%`, `^`, `&&` y `\|\|`. TINY no lo usa |
+| 3 | `ac3` | Guarda el exponente de una potencia real. TINY no lo usa |
+
+Hay dos formatos de instrucción: `op r,s,t` (solo registros: `ADD`, `SUB`, `MUL`, `DIV`,
+`DIVR`, `IN`, `INR`, `OUT`, `HALT`) y `op r,d(s)` (registro y dirección `d + reg[s]`: `LD`, `ST`, `LDA`,
+`LDC` y los saltos `JLT`, `JLE`, `JGT`, `JGE`, `JEQ`, `JNE`). El preludio carga en `mp`
+la dirección más alta (`LD 6,0(0)`) y limpia la posición 0 (`ST 0,0(0)`).
+
+**Correspondencia entre nuestros nodos y las instrucciones TM.** `d` es la dirección de la
+variable en la tabla de símbolos. `t` es el temporal libre (empieza en 0 y baja con cada
+operando guardado).
+
+| Nuestro nodo | Nodo de TINY | Instrucciones TM |
+|---|---|---|
+| `programa`, `lista_declaracion`, `lista_sentencias`, `else_body` | Sentencias hermanas (`sibling`) | El código de cada sentencia, en orden |
+| `declaracion_variable`, `KW_MAIN` | (no existe) | Ninguna: la tabla ya tiene las direcciones |
+| `asignacion` | `AssignK` | expresión; `ST 0,d(5)` |
+| `sent_in` | `ReadK` | `IN 0,0,0` (`INR 0,0,0` si la variable es `float`); `ST 0,d(5)` |
+| `sent_out` | `WriteK` | por cada expresión: expresión; `OUT 0,0,0` |
+| `seleccion` | `IfK` | condición; `JEQ 0,→else(7)`; then; `LDA 7,→fin(7)`; else |
+| `repeticion` (`do … until`) | `RepeatK` | cuerpo; condición; `JEQ 0,→cuerpo(7)` |
+| `iteracion` (`while`) | (no existe) | condición; `JEQ 0,→salida(7)`; cuerpo; `LDA 7,→condición(7)` |
+| `incremento` | (no existe) | `LD 0,d(5)`; `LDA 0,1(0)` (`-1` para `--`); `ST 0,d(5)` |
+| `INTEGER`, `REAL`, `true`, `false`, `-literal` | `ConstK` | `LDC 0,v(0)` (`true` = 1, `false` = 0; un real como en el fuente: `LDC 0,7.59(0)`) |
+| `CONV` (int → float) | (no existe) | Ninguna: en la TM extendida un entero ya es un número real |
+| `IDENTIFIER` | `IdK` | `LD 0,d(5)` |
+| `OP_PLUS`, `OP_MINUS`, `OP_MULTIPLY`, `OP_DIVIDE` | `OpK` (`PLUS`, `MINUS`, `TIMES`, `OVER`) | izq; `ST 0,t(6)`; der; `LD 1,t(6)`; `ADD`/`SUB`/`MUL`/`DIV 0,1,0` (`DIVR` si la división es `float`) |
+| `OP_LT`, `OP_EQ` | `OpK` (`LT`, `EQ`) | izq; `ST 0,t(6)`; der; `LD 1,t(6)`; `SUB 0,1,0`; `JLT`/`JEQ 0,2(7)`; `LDC 0,0(0)`; `LDA 7,1(7)`; `LDC 0,1(0)` |
+| `OP_LE`, `OP_GT`, `OP_GE`, `OP_NE` | (no existen) | Igual que `<`, con `JLE`, `JGT`, `JGE`, `JNE` |
+| `OP_MODULO` | (no existe) | operandos; `DIV 2,1,0`; `MUL 2,2,0`; `SUB 0,1,2` (izq − (izq / der) · der) |
+| `OP_POWER` | (no existe) | operandos; `LDC 2,1(0)`; `JLE 0,3(7)`; `MUL 2,2,1`; `LDA 0,-1(0)`; `LDA 7,-4(7)`; `LDA 0,0(2)`. Si el resultado es `float`: antes guarda el exponente en `ac3` y lo vuelve positivo (`LDA 3,0(0)`; `JGE 0,2(7)`; `LDC 2,0(0)`; `SUB 0,2,0`), y después, si era negativo, calcula 1 / resultado (`JGE 3,2(7)`; `LDC 0,1(0)`; `DIVR 2,0,2`) |
+| `OP_AND` | (no existe) | operandos; `JEQ 1,3(7)`; `JEQ 0,2(7)`; `LDC 0,1(0)`; `LDA 7,1(7)`; `LDC 0,0(0)` |
+| `OP_OR` | (no existe) | operandos; `JNE 1,3(7)`; `JNE 0,2(7)`; `LDC 0,0(0)`; `LDA 7,1(7)`; `LDC 0,1(0)` |
+| `OP_NOT` | (no existe) | operando; `JEQ 0,2(7)`; `LDC 0,0(0)`; `LDA 7,1(7)`; `LDC 0,1(0)` |
+| `OP_NEG` | (no existe) | operando; `LDC 1,0(0)`; `SUB 0,1,0` |
+
+Una condición es verdadera si su valor no es 0: `if`, `while` y `until` saltan con `JEQ`
+cuando vale 0. `&&` y `||` evalúan los dos operandos (sin cortocircuito), igual que en el
+`.ci`.
+
+**Saltos.** La TM no tiene etiquetas: cada salto es un desplazamiento respecto del `pc`,
+que al ejecutar una instrucción ya apunta a la siguiente. `JEQ 0,27(7)` en la dirección
+13 salta a 13 + 1 + 27 = 41.
+- Un salto hacia atrás ya conoce su destino. `emit_rm_abs` lo convierte en desplazamiento:
+  d = destino − (dirección actual + 1).
+- Un salto hacia adelante todavía no lo conoce:
+  1. `emit_skip(1)` aparta su dirección y el generador sigue.
+  2. Al terminar la parte que salta, `emit_backup` regresa a esa dirección y la escribe.
+  3. `emit_restore` vuelve al final del código.
+
+Por eso, en el archivo, ese salto aparece más abajo con su dirección original, igual que en
+el `.tm` de TINY. El simulador acomoda cada instrucción en su dirección. En el factorial,
+la etiqueta `L2` del `.ci` (inicio del `do`) es la dirección 16 del `.tm`: el `JEQ
+0,-22(7)` de la dirección 37 salta a 37 + 1 − 22 = 16.
+
+Ejemplo (`fact = fact * x;`, direcciones 16 a 21 del factorial):
+
+```
+ 16:     LD  0,1(5)   carga fact (dirección 1) en ac
+ 17:     ST  0,0(6)   guarda el operando izquierdo en el temporal 0
+ 18:     LD  0,0(5)   carga x (dirección 0) en ac
+ 19:     LD  1,0(6)   recupera el operando izquierdo en ac1
+ 20:    MUL  0,1,0    ac = ac1 * ac
+ 21:     ST  0,1(5)   guarda el resultado en fact
+```
+
+En el `.ci` la misma sentencia es `t2 = fact * x` / `fact = t2`. El temporal `t2` es
+simbólico y no corresponde a una dirección del `.tm`.
+
+**Lo que la TM no puede representar:**
+
+| Caso | Qué pasa |
+|---|---|
+| `^` con exponente `float` (`x ^ 0.5`) | Error de generación: el ciclo solo multiplica un número entero de veces. No se genera el `.tm`, pero sí el `.ci` |
+| Texto en `cout` | `OUT` solo imprime números. El texto se omite con un aviso y un comentario en el `.tm` |
+| Más de 1024 instrucciones, o más de 1024 variables y temporales | Error de generación |
+| `^` entero con exponente negativo | Da 1: el ciclo de multiplicaciones no se ejecuta (con una constante negativa el análisis semántico ya da error). Con resultado `float` sí se calcula (`2.0 ^ -1` = 0.5) |
+| División o residuo entre cero | Lo detecta el simulador al ejecutar: `Error: division entre cero` |
+
+**Archivos y ejecución.** Con las fases `intermediate`, `execution` y `all`, el compilador
+escribe `programa.ci` y `programa.tm` junto al fuente, como `tiny.exe`. Si alguno no se
+generó, borra el que hubiera de una compilación anterior. Con `execution`, la sección
+`EJECUCION` trae la ruta del `.tm`. El IDE la carga en `TM/tm.exe` y manda `g` (ejecutar).
+En la pestaña Ejecución se contestan los `IN` / `INR` y se ven los `OUT`; también acepta
+los comandos de la TM (`d`, `r`, `s`, `v`, `h`, `q`).

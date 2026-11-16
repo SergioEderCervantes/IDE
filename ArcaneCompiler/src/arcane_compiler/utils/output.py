@@ -2,7 +2,7 @@ import json
 from typing import Optional
 from ..lexer.token_type import TokenType
 from ..lexer.token import Token
-from ..errors import CompilerError, LEXICO, SINTACTICO, SEMANTICO
+from ..errors import CompilerError, GENERACION, LEXICO, SINTACTICO, SEMANTICO
 from ..semantic.analyzer import SemanticResult
 
 
@@ -58,5 +58,6 @@ def format_errors(errores: dict[str, Optional[list[CompilerError]]], avisos: lis
         "lexico": por_fase(LEXICO),
         "sintactico": por_fase(SINTACTICO),
         "semantico": por_fase(SEMANTICO),
+        "generacion": por_fase(GENERACION),
         "avisos": avisos,
     }, indent=2, ensure_ascii=False)

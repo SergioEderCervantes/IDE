@@ -1,0 +1,36 @@
+// Repetitivo: votos de 4 candidatos hasta un 0; votos y porcentaje de cada uno
+main {
+  int v, c1, c2, c3, c4, total;
+  c1 = 0;
+  c2 = 0;
+  c3 = 0;
+  c4 = 0;
+  total = 0;
+  cin >> v;
+  while v != 0 {
+    if v == 1 then
+      c1++;
+    end
+    if v == 2 then
+      c2++;
+    end
+    if v == 3 then
+      c3++;
+    end
+    if v == 4 then
+      c4++;
+    end
+    total++;
+    cin >> v;
+  }
+  if total > 0 then
+    cout << c1;
+    cout << c1 * 100 / total;
+    cout << c2;
+    cout << c2 * 100 / total;
+    cout << c3;
+    cout << c3 * 100 / total;
+    cout << c4;
+    cout << c4 * 100 / total;
+  end
+}

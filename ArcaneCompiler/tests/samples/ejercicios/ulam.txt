@@ -1,0 +1,14 @@
+// Repetitivo: sucesión de ULAM (par: entre 2; impar: por 3 más 1) hasta llegar a 1
+main {
+  int n;
+  cin >> n;
+  cout << n;
+  while n != 1 {
+    if n % 2 == 0 then
+      n = n / 2;
+    else
+      n = 3 * n + 1;
+    end
+    cout << n;
+  }
+}

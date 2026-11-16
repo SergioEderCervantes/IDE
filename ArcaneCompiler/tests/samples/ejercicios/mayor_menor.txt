@@ -1,0 +1,21 @@
+// Repetitivo: el mayor y el menor de N números
+main {
+  int n, i, x, mayor, menor;
+  cin >> n;
+  cin >> x;
+  mayor = x;
+  menor = x;
+  i = 1;
+  while i < n {
+    cin >> x;
+    if x > mayor then
+      mayor = x;
+    end
+    if x < menor then
+      menor = x;
+    end
+    i++;
+  }
+  cout << mayor;
+  cout << menor;
+}

@@ -8,13 +8,19 @@ una fase previa encontró errores.
 El código de salida es 0 siempre que el compilador termine, aunque el programa
 tenga errores (esos errores son el resultado del análisis). Solo es 1 cuando la
 invocación es inválida (argumentos, fase o archivo); el motivo va a stderr.
+
+Con las fases intermediate, execution y all se escriben junto al archivo fuente, como
+el tiny.exe de la materia, programa.ci (tres direcciones) y programa.tm (código para el
+simulador TM). Si no se pudieron generar, se borran los de una compilación anterior para
+que nunca quede código viejo que parezca del programa actual. La ejecución la hace el
+simulador TM (tm.exe) con el .tm; el IDE lo lanza.
 """
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from arcane_compiler.errors import CompilerError, LEXICO, SINTACTICO, SEMANTICO
+from arcane_compiler.errors import CompilerError, GENERACION, LEXICO, SINTACTICO, SEMANTICO
 from arcane_compiler.intermediate.generator import IntermediateGenerator, IntermediateResult
 from arcane_compiler.lexer.lexer import Lexer
 from arcane_compiler.lexer.token import Token
@@ -23,6 +29,7 @@ from arcane_compiler.parser.ast_nodes import ASTNode
 from arcane_compiler.parser.ast_serializer import ast_to_json
 from arcane_compiler.parser.parser import Parser
 from arcane_compiler.semantic.analyzer import SemanticAnalyzer, SemanticResult
+from arcane_compiler.tm.cgen import TMGenerator, TMResult
 from arcane_compiler.utils.output import (
     emit_section, format_errors, format_semantic, format_symbol_table, format_token_table,
 )
@@ -53,9 +60,10 @@ class CompilationResult:
     tokens: Optional[list[Token]] = None
     ast: Optional[ASTNode] = None
     semantico: Optional[SemanticResult] = None
-    intermedio: Optional[IntermediateResult] = None
+    intermedio: Optional[IntermediateResult] = None   # .ci
+    tm: Optional[TMResult] = None                     # .tm (None si no se pudo generar)
     errores: dict[str, Optional[list[CompilerError]]] = field(
-        default_factory=lambda: {LEXICO: None, SINTACTICO: None, SEMANTICO: None}
+        default_factory=lambda: {LEXICO: None, SINTACTICO: None, SEMANTICO: None, GENERACION: None}
     )
     avisos: list[str] = field(default_factory=list)
 
@@ -67,8 +75,10 @@ def _requested_phases(phase: str) -> list[str]:
     return PHASES[: PHASES.index(phase) + 1]
 
 
-def compile_source(source: str, phase: str) -> CompilationResult:
-    """Ejecuta el pipeline hasta `phase` y devuelve lo que produjo cada fase."""
+def compile_source(source: str, phase: str, archivo_tm: str = "programa.tm") -> CompilationResult:
+    """Ejecuta el pipeline hasta `phase` y devuelve lo que produjo cada fase.
+
+    `archivo_tm` solo se escribe en el comentario del encabezado del código TM."""
     requested = _requested_phases(phase)
     result = CompilationResult()
 
@@ -122,23 +132,59 @@ def compile_source(source: str, phase: str) -> CompilationResult:
             )
         return result
 
-    # ── Fase 4: código intermedio de tres direcciones (sobre el AST anotado)
+    # ── Fase 4: dos caminos paralelos desde el mismo AST anotado, como en el TINY de la
+    # materia: el código de tres direcciones (.ci) y el código para la máquina TM (.tm)
     try:
-        result.intermedio = IntermediateGenerator().generate(result.semantico.ast)
+        ast_anotado, tabla = result.semantico.ast, result.semantico.tabla
+        result.intermedio = IntermediateGenerator().generate(ast_anotado)
+        tm = TMGenerator().generate(ast_anotado, tabla, archivo_tm)
     except RecursionError:
         result.avisos.append(
             "La fase de generación de código intermedio no se ejecutó: " + _ANIDAMIENTO_EXCESIVO + "."
         )
         return result
+    result.errores[GENERACION] = tm.errores
+    result.avisos.extend(tm.avisos)
+    if not tm.errores:
+        result.tm = tm
+    elif phase == "execution":
+        result.avisos.append(
+            "El programa no se puede ejecutar: no se generó el código TM (revisa los errores de generación)."
+        )
 
-    # ── Fase 5: pendiente de implementar
-    if phase == "execution":
-        result.avisos.append(f"La fase de {_PHASE_TITLES[phase]} aún no está implementada.")
+    # ── Fase 5: la ejecución la hace el simulador TM con el archivo .tm (lo lanza el IDE)
     return result
 
 
-def emit_result(result: CompilationResult) -> None:
-    """Escribe el resultado en stdout con el protocolo de secciones que lee el IDE."""
+def ruta_salida(fuente: Path, extension: str) -> Path:
+    """programa.txt → programa.tm. Si el fuente ya tiene esa extensión (.tm o .ci) se agrega
+    otra, para no escribir encima del programa."""
+    if fuente.suffix.lower() in (".tm", ".ci"):
+        return fuente.with_name(fuente.name + extension)
+    return fuente.with_suffix(extension)
+
+
+def escribir_salidas(fuente: Path, result: CompilationResult) -> Optional[Path]:
+    """Escribe el .ci y el .tm junto al archivo fuente y devuelve la ruta del .tm.
+
+    El que no se generó se borra: si quedara el de una compilación anterior, el simulador
+    ejecutaría código de otro programa. Devuelve None si no hay .tm."""
+    salidas = (
+        (ruta_salida(fuente, ".ci"), result.intermedio.texto() + "\n" if result.intermedio else ""),
+        (ruta_salida(fuente, ".tm"), result.tm.texto() if result.tm else ""),
+    )
+    for ruta, contenido in salidas:
+        if contenido:
+            ruta.write_text(contenido, encoding="utf-8")
+        else:
+            ruta.unlink(missing_ok=True)
+    return salidas[1][0] if result.tm else None
+
+
+def emit_result(result: CompilationResult, ejecucion: str = "") -> None:
+    """Escribe el resultado en stdout con el protocolo de secciones que lee el IDE.
+
+    `ejecucion` es la ruta del .tm que el IDE debe cargar en el simulador TM."""
     tokens = format_token_table(result.tokens) if result.tokens is not None else ""
 
     sintactico = ""
@@ -153,9 +199,10 @@ def emit_result(result: CompilationResult) -> None:
     emit_section("SINTACTICO", sintactico)
     emit_section("SEMANTICO", semantico)
     emit_section("CODIGO_INTERMEDIO", result.intermedio.texto() if result.intermedio else "")
+    emit_section("CODIGO_TM", result.tm.texto() if result.tm else "")
     emit_section("TABLA_SIMBOLOS", tabla)
     emit_section("ERRORES", format_errors(result.errores, result.avisos))
-    emit_section("EJECUCION", "")
+    emit_section("EJECUCION", ejecucion)
 
 
 def main() -> None:
@@ -185,9 +232,18 @@ def main() -> None:
         sys.exit(1)
 
     sys.setrecursionlimit(max(sys.getrecursionlimit(), _LIMITE_RECURSION))
-    resultado = compile_source(source, phase)
+    resultado = compile_source(source, phase, ruta_salida(path, ".tm").name)
+    ejecucion = ""
+    if phase in ("intermediate", "execution", "all"):
+        try:
+            ruta_tm = escribir_salidas(path, resultado)
+        except OSError as e:
+            ruta_tm = None
+            resultado.avisos.append(f"No se pudieron escribir los archivos .ci y .tm: {e}")
+        if ruta_tm is not None and phase in ("execution", "all"):
+            ejecucion = str(ruta_tm.resolve())
     try:
-        emit_result(resultado)
+        emit_result(resultado, ejecucion)
     except RecursionError:  # el AST cupo en el análisis pero no al convertirlo a JSON
         print(f"Error: {_ANIDAMIENTO_EXCESIVO}", file=sys.stderr)
         sys.exit(1)

@@ -1,0 +1,24 @@
+// Repetitivo: imprime los primos menores que M y al final cuántos son
+main {
+  int m, n, d, cuenta;
+  bool primo;
+  cin >> m;
+  cuenta = 0;
+  n = 2;
+  while n < m {
+    primo = true;
+    d = 2;
+    while d * d <= n && primo {
+      if n % d == 0 then
+        primo = false;
+      end
+      d++;
+    }
+    if primo then
+      cout << n;
+      cuenta++;
+    end
+    n++;
+  }
+  cout << cuenta;
+}

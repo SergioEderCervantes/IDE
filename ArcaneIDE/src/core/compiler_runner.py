@@ -11,11 +11,13 @@ class CompilerRunner(QObject):
 
     - compilation_finished(dict): el compilador terminó. Las llaves son las secciones en
       minúsculas (lexico, sintactico, ...). Las secciones JSON ya vienen parseadas:
-        errores:        {lexico, sintactico, semantico: list[{linea, columna, mensaje}] | None,
-                         avisos: list[str]}
+        errores:        {lexico, sintactico, semantico, generacion:
+                             list[{linea, columna, mensaje}] | None, avisos: list[str]}
         semantico:      {success, ast (anotado), recorrido: list[{linea, accion, detalle}],
                          error_count} | None
         tabla_simbolos: list[{nombre, tipo, direccion, referencias}] | None
+      Las demás son texto: codigo_intermedio (.ci), codigo_tm (.tm) y ejecucion (ruta del
+      .tm que hay que cargar en el simulador TM; vacía si no hay que ejecutar).
     - compilation_error(str): el compilador no pudo ejecutarse o falló (mensaje para el usuario).
     """
     compilation_started = pyqtSignal()
@@ -170,10 +172,10 @@ def _lista_de_dicts(valor) -> bool:
 
 
 def _errores_validos(errores) -> bool:
-    """ERRORES = {lexico, sintactico, semantico: list[dict] | None, avisos: list[str]}."""
+    """ERRORES = {lexico, sintactico, semantico, generacion: list[dict] | None, avisos: list[str]}."""
     if not isinstance(errores, dict):
         return False
-    for fase in ("lexico", "sintactico", "semantico"):
+    for fase in ("lexico", "sintactico", "semantico", "generacion"):
         lista = errores.get(fase)
         if lista is not None and not _lista_de_dicts(lista):
             return False

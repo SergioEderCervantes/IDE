@@ -313,15 +313,31 @@ class MainWindow(QMainWindow):
         self.output_tabs.update_ast(results.get("sintactico", ""))
         self.output_tabs.update_semantic(results.get("semantico"), aviso_semantico)
         self.output_tabs.update_intermediate_code(results.get("codigo_intermedio", ""))
+        codigo_tm = results.get("codigo_tm", "")
+        self.output_tabs.update_tm_code(
+            codigo_tm, "No se generó el código TM: revisa la pestaña Errores." if errores.get("generacion") else None
+        )
         self.output_tabs.update_symbol_table(results.get("tabla_simbolos"))
-        self.output_tabs.update_execution(results.get("ejecucion", ""))
 
         total = self.output_tabs.update_errors(errores)
         self.editor_widget.marcar_errores(errores)
 
+        # F9: el compilador dejó el .tm junto al fuente; lo ejecuta el simulador TM
+        archivo_tm = results.get("ejecucion", "")
+        if archivo_tm:
+            self.output_tabs.run_tm(archivo_tm)
+        elif self._result_tab == "ejecución":
+            self.output_tabs.execution_message(
+                "No se ejecutó: el programa no tiene código TM. Revisa la pestaña Errores."
+            )
+
         if total:
             self.status_bar.showMessage(f"Compilación terminada con {total} error(es). Revisa la pestaña Errores.")
             self.output_tabs.focus_tab("errores")
+        elif codigo_tm:
+            # Los avisos que quedan (texto omitido de un cout) no impiden ver ni correr el código
+            self.status_bar.showMessage(avisos[0] if avisos else "Compilación terminada sin errores.", 8000)
+            self.output_tabs.focus_tab(self._result_tab)
         elif avisos:
             self.status_bar.showMessage(avisos[0])
             self.output_tabs.focus_tab("errores")
@@ -413,6 +429,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):# type: ignore
         if self._prompt_to_save():
+            self.output_tabs.stop_tm()
             event.accept()
         else:
             event.ignore()

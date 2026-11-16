@@ -1,0 +1,15 @@
+// Selectivo: el mayor de tres números reales (pueden ser iguales)
+main {
+  float a, b, c, mayor;
+  cin >> a;
+  cin >> b;
+  cin >> c;
+  mayor = a;
+  if b > mayor then
+    mayor = b;
+  end
+  if c > mayor then
+    mayor = c;
+  end
+  cout << mayor;
+}

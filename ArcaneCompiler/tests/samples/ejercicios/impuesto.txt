@@ -1,0 +1,20 @@
+// Selectivo: los primeros $20 no pagan impuesto, los siguientes $20 pagan 30% y el resto
+// 40% (50% si el costo es mayor que $500); imprime el precio total
+main {
+  float costo, impuesto, total;
+  cin >> costo;
+  impuesto = 0;
+  if costo > 20 then
+    if costo <= 40 then
+      impuesto = (costo - 20) * 0.30;
+    else
+      if costo > 500 then
+        impuesto = 20 * 0.30 + (costo - 40) * 0.50;
+      else
+        impuesto = 20 * 0.30 + (costo - 40) * 0.40;
+      end
+    end
+  end
+  total = costo + impuesto;
+  cout << total;
+}

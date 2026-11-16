@@ -1,0 +1,8 @@
+// Secuencial: peso en libras a kilogramos y longitud en pies a metros
+main {
+  float libras, pies;
+  cin >> libras;
+  cin >> pies;
+  cout << libras * 0.4536;
+  cout << pies * 0.3048;
+}

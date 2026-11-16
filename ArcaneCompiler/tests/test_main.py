@@ -73,10 +73,11 @@ def test_fase_all_ejecuta_las_fases_implementadas():
     assert r.avisos == []
 
 
-def test_fase_pendiente_avisa():
+def test_fase_de_ejecucion_genera_el_codigo_tm():
+    """La ejecución la hace el simulador TM: el compilador solo tiene que dejar el .tm."""
     r = compile_source("main { int x; }", "execution")
-    assert r.ast is not None and r.intermedio is not None
-    assert any("aún no está implementada" in a for a in r.avisos)
+    assert r.ast is not None and r.intermedio is not None and r.tm is not None
+    assert r.avisos == []
 
 
 def test_fase_intermedia_no_avisa():
@@ -134,11 +135,11 @@ def _run_source(source: str, phase: str) -> subprocess.CompletedProcess:
         return _run_cli(str(path), phase)
 
 
-def test_cli_emite_las_siete_secciones():
+def test_cli_emite_las_ocho_secciones():
     proc = _run_source("main { int x; }", "syntactic")
     assert proc.returncode == 0
     assert set(_sections(proc.stdout)) == {
-        "LEXICO", "SINTACTICO", "SEMANTICO", "CODIGO_INTERMEDIO",
+        "LEXICO", "SINTACTICO", "SEMANTICO", "CODIGO_INTERMEDIO", "CODIGO_TM",
         "TABLA_SIMBOLOS", "ERRORES", "EJECUCION",
     }
 
