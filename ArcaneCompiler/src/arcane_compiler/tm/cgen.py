@@ -27,19 +27,19 @@ Lo que TINY no tiene (la tabla completa está en GRAMATICA.md §12):
 - x++ / x--: LD, LDA ac,±1(ac), ST.
 - true y false son 1 y 0.
 
-Reales (float). TM/tm.c está extendido: registros y memoria son reales, LDC acepta
-decimales, INR lee un real y DIVR divide sin truncar. Por eso:
-- Un literal real se carga con LDC (LDC 0,7.59(0)).
-- La división entre floats es DIVR; entre ints sigue siendo DIV, que trunca.
-- cin de una variable float es INR; de int o bool, IN (solo acepta enteros).
-- CONV (int → float) no genera instrucciones: el valor ya es el mismo número.
-- ^ con resultado float acepta exponente negativo: al final calcula 1 / resultado.
+Extensión de TM/tm.c (la maestra permite adaptar la TM al compilador):
+- Reales: registros y memoria son reales, LDC acepta decimales (LDC 0,7.59(0)), INR lee
+  un real y DIVR divide sin truncar. La división entre floats es DIVR; entre ints sigue
+  siendo DIV. cin de una variable float es INR; de int o bool, IN (solo acepta enteros).
+  CONV (int → float) no genera instrucciones: el valor ya es el mismo número.
+- ^ con resultado float es POW (potencia real, acepta 2.0 ^ 0.5 y 2.0 ^ -1). Entre ints
+  sigue siendo el ciclo de multiplicaciones, que es exacto.
+- Texto: un cout con texto escribe cada byte del texto con LDC + OUTC, el número con OUTN
+  (sin terminar la línea) y al final un '\n' (10) con OUTC. Todo sale en una línea:
+  "Resultado del programa (OUT): Total: 120". Un cout sin texto sigue siendo OUT.
 
-Lo que la TM no puede hacer, y por eso se informa en lugar de generarse:
-- ^ con exponente float (2.0 ^ 0.5): el ciclo solo sabe multiplicar un número entero de
-  veces. Es un error de generación.
-- OUT solo imprime números: el texto de un cout se omite con un aviso.
-- El simulador tiene 1024 direcciones de instrucciones y 1024 de datos.
+El simulador tiene 1024 direcciones de instrucciones y 1024 de datos; pasarse es un error
+de generación.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -48,7 +48,7 @@ from ..errors import CompilerError, GENERACION
 from ..parser.ast_nodes import ASTNode
 from ..semantic.constantes import valor_literal
 from ..semantic.symbol_table import SymbolTable
-from .code import AC, AC1, AC2, AC3, DADDR_SIZE, GP, IADDR_SIZE, MP, PC, Emisor, Instruccion
+from .code import AC, AC1, AC2, DADDR_SIZE, GP, IADDR_SIZE, MP, PC, Emisor, Instruccion
 
 _CONTENEDORES = {"programa", "lista_declaracion", "lista_sentencias", "else_body"}
 
@@ -211,18 +211,33 @@ class TMGenerator:
         e.emit_rm("ST", AC, self._st_lookup(ident), GP, "read: store value")
 
     def _write(self, node: ASTNode) -> None:
-        """WriteK, una vez por cada expresión del cout."""
+        """WriteK. Sin texto, OUT como en TINY. Con texto (extensión), todo el cout en una
+        línea: cada byte del texto con OUTC, el número con OUTN y al final un '\\n'."""
         e = self._e
-        for elemento in node.children[0].children:
+        elementos = node.children[0].children
+        if not any(el.kind == "STRING_LITERAL" for el in elementos):
+            for elemento in elementos:
+                self._exp(elemento)
+                e.emit_ro("OUT", AC, 0, 0, "write ac")
+            return
+        e.emit_comment("-> cout con texto")
+        for elemento in elementos:
             if elemento.kind == "STRING_LITERAL":
-                e.emit_comment(f'cout: se omite el texto "{elemento.value}" (OUT solo imprime números)')
-                self._avisos.append(
-                    f'Línea {elemento.line}: la TM solo imprime números, así que se omitió '
-                    f'el texto "{elemento.value}" del cout.'
-                )
-                continue
-            self._exp(elemento)
-            e.emit_ro("OUT", AC, 0, 0, "write ac")
+                self._texto(elemento.value)
+            else:
+                self._exp(elemento)
+                e.emit_ro("OUTN", AC, 0, 0, "write number")
+        e.emit_rm("LDC", AC, 10, 0, "fin de linea")
+        e.emit_ro("OUTC", AC, 0, 0, "write char")
+        e.emit_comment("<- cout con texto")
+
+    def _texto(self, texto: str) -> None:
+        """Un LDC + OUTC por byte (UTF-8, así salen bien los acentos y la ñ)."""
+        e = self._e
+        for caracter in texto:
+            for byte in caracter.encode("utf-8"):
+                e.emit_rm("LDC", AC, byte, 0, f"char '{caracter}'")
+                e.emit_ro("OUTC", AC, 0, 0, "write char")
 
     # ─── Expresiones (genExp): el resultado queda en ac ─────────────────────────
 
@@ -306,36 +321,21 @@ class TMGenerator:
         e.emit_comment("<- Op")
 
     def _potencia(self, node: ASTNode) -> None:
-        """ac = ac1 ^ ac con un ciclo de multiplicaciones (la TM no tiene potencia).
+        """ac = ac1 ^ ac.
 
-        Entero: ac2 = 1; mientras ac > 0: ac2 = ac2 * base, ac = ac - 1; ac = ac2. Con
-        exponente negativo da 1 (con una constante negativa el semántico ya da error).
-        Real: además se guarda el exponente en ac3, el ciclo usa su valor absoluto y, si era
-        negativo, el resultado es 1 / ac2 (2.0 ^ -1 = 0.5)."""
+        Real: POW (extensión de la TM), que acepta exponentes con decimales y negativos.
+        Entero: un ciclo de multiplicaciones, exacto (pow con reales podría dar 99.999…):
+        ac2 = 1; mientras ac > 0: ac2 = ac2 * base, ac = ac - 1; ac = ac2. Con exponente
+        negativo da 1 (con una constante negativa el semántico ya da error)."""
         e = self._e
-        exponente = node.children[1]
-        real = node.attrs.get("tipo") == "float"
-        if exponente.attrs.get("tipo") == "float" and exponente.kind != "CONV":
-            self._errores.append(CompilerError(
-                GENERACION,
-                "la TM solo calcula potencias con exponente entero: el ciclo de "
-                "multiplicaciones no puede elevar a un exponente float",
-                exponente.line, exponente.col,
-            ))
-        if real:
-            e.emit_rm("LDA", AC3, 0, AC, "op ^: ac3 = exponente")
-            e.emit_rm("JGE", AC, 2, PC, "op ^: exponente >= 0")
-            e.emit_rm("LDC", AC2, 0, 0, "op ^: ac2 = 0")
-            e.emit_ro("SUB", AC, AC2, AC, "op ^: exponente = -exponente")
+        if node.attrs.get("tipo") == "float":
+            e.emit_ro("POW", AC, AC1, AC, "op ^ (real)")
+            return
         e.emit_rm("LDC", AC2, 1, 0, "op ^: ac2 = 1")
         e.emit_rm("JLE", AC, 3, PC, "op ^: sale si el exponente <= 0")
         e.emit_ro("MUL", AC2, AC2, AC1, "op ^: ac2 = ac2 * base")
         e.emit_rm("LDA", AC, -1, AC, "op ^: exponente - 1")
         e.emit_rm("LDA", PC, -4, PC, "op ^: regresa a la prueba")
-        if real:
-            e.emit_rm("JGE", AC3, 2, PC, "op ^: exponente original >= 0")
-            e.emit_rm("LDC", AC, 1, 0, "op ^: ac = 1")
-            e.emit_ro("DIVR", AC2, AC, AC2, "op ^: ac2 = 1 / ac2")
         e.emit_rm("LDA", AC, 0, AC2, "op ^: ac = ac2")
 
     # ─── Memoria ─────────────────────────────────────────────────────────────

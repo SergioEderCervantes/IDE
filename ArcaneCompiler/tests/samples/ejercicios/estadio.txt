@@ -1,0 +1,40 @@
+// Repetitivo: precios de 5 localidades y ventas (clave, cantidad) hasta -1, -1. Imprime
+// clave, cantidad e importe de cada venta, los boletos de cada tipo y la recaudación.
+main {
+  float p1, p2, p3, p4, p5, precio, importe, total;
+  int clave, cant, b1, b2, b3, b4, b5;
+  cin >> p1;
+  cin >> p2;
+  cin >> p3;
+  cin >> p4;
+  cin >> p5;
+  b1 = 0;
+  b2 = 0;
+  b3 = 0;
+  b4 = 0;
+  b5 = 0;
+  total = 0;
+  cin >> clave;
+  cin >> cant;
+  while clave != -1 {
+    precio = 0;
+    if clave == 1 then precio = p1; b1 = b1 + cant; end
+    if clave == 2 then precio = p2; b2 = b2 + cant; end
+    if clave == 3 then precio = p3; b3 = b3 + cant; end
+    if clave == 4 then precio = p4; b4 = b4 + cant; end
+    if clave == 5 then precio = p5; b5 = b5 + cant; end
+    importe = precio * cant;
+    total = total + importe;
+    cout << clave;
+    cout << cant;
+    cout << importe;
+    cin >> clave;
+    cin >> cant;
+  }
+  cout << b1;
+  cout << b2;
+  cout << b3;
+  cout << b4;
+  cout << b5;
+  cout << total;
+}

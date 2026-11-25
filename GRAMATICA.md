@@ -408,8 +408,9 @@ la materia, línea por línea. Solo cambia el comentario `* File:`. Los archivos
 referencia están en `tests/samples/tiny/esperado/`. Las pruebas (`test_tm.py`) también
 ejecutan el código en el simulador real y revisan lo que imprime.
 
-**La máquina.** `TM/tm.c` es el simulador de la materia con una extensión para números
-reales (los cambios están marcados con `EXTENSION` en el código):
+**La máquina.** `TM/tm.c` es el simulador de la materia con una extensión para nuestro
+lenguaje: reales, texto en la salida y potencia real. La maestra permite adaptar la TM al
+compilador. Los cambios están marcados con `EXTENSION` en el código:
 
 | Cambio | Original | Extendido |
 |---|---|---|
@@ -420,9 +421,15 @@ reales (los cambios están marcados con `EXTENSION` en el código):
 | `DIV r,s,t` | División entera | Igual: divide y trunca hacia cero |
 | `DIVR r,s,t` | (no existe) | División real |
 | `OUT`, comandos `r` y `d` | `%d` | Sin decimales si el valor es entero, con decimales si no |
+| `OUTC r` | (no existe) | Escribe el carácter (byte) `reg[r]` en la línea actual; el 10 (`'\n'`) la termina |
+| `OUTN r` | (no existe) | Escribe el número `reg[r]` sin terminar la línea |
+| `POW r,s,t` | (no existe) | Potencia real `reg[s] ^ reg[t]`. `0 ^ negativo` es división entre cero; sin resultado real (`-4 ^ 0.5`): `Error: potencia sin resultado real` |
 
-Un programa de solo enteros se ejecuta igual y la consola se ve igual que con el `tm.c`
-original (las pruebas lo comparan). La única diferencia es que un entero que pasa de 32 bits
+`OUTC` y `OUTN` empiezan la línea con el mismo letrero de `OUT`, así que un `cout` con texto
+sale como `Resultado del programa (OUT): Total: 120`.
+
+Un programa de solo enteros y sin texto se ejecuta igual y la consola se ve igual que con el
+`tm.c` original (las pruebas lo comparan). La única diferencia es que un entero que pasa de 32 bits
 ya no da un valor sin sentido, porque los registros son `double`. Hay 8 registros, 1024
 direcciones de instrucciones y 1024 de datos.
 
@@ -434,10 +441,9 @@ direcciones de instrucciones y 1024 de datos.
 | 0 | `ac` | Acumulador: cada expresión deja ahí su resultado |
 | 1 | `ac1` | Segundo acumulador: el operando izquierdo |
 | 2 | `ac2` | Auxiliar de `%`, `^`, `&&` y `\|\|`. TINY no lo usa |
-| 3 | `ac3` | Guarda el exponente de una potencia real. TINY no lo usa |
 
 Hay dos formatos de instrucción: `op r,s,t` (solo registros: `ADD`, `SUB`, `MUL`, `DIV`,
-`DIVR`, `IN`, `INR`, `OUT`, `HALT`) y `op r,d(s)` (registro y dirección `d + reg[s]`: `LD`, `ST`, `LDA`,
+`DIVR`, `POW`, `IN`, `INR`, `OUT`, `OUTC`, `OUTN`, `HALT`) y `op r,d(s)` (registro y dirección `d + reg[s]`: `LD`, `ST`, `LDA`,
 `LDC` y los saltos `JLT`, `JLE`, `JGT`, `JGE`, `JEQ`, `JNE`). El preludio carga en `mp`
 la dirección más alta (`LD 6,0(0)`) y limpia la posición 0 (`ST 0,0(0)`).
 
@@ -451,7 +457,8 @@ operando guardado).
 | `declaracion_variable`, `KW_MAIN` | (no existe) | Ninguna: la tabla ya tiene las direcciones |
 | `asignacion` | `AssignK` | expresión; `ST 0,d(5)` |
 | `sent_in` | `ReadK` | `IN 0,0,0` (`INR 0,0,0` si la variable es `float`); `ST 0,d(5)` |
-| `sent_out` | `WriteK` | por cada expresión: expresión; `OUT 0,0,0` |
+| `sent_out` sin texto | `WriteK` | por cada expresión: expresión; `OUT 0,0,0` |
+| `sent_out` con texto | (no existe) | por cada byte del texto (UTF-8): `LDC 0,b(0)`; `OUTC 0,0,0`. Por cada expresión: expresión; `OUTN 0,0,0`. Al final: `LDC 0,10(0)`; `OUTC 0,0,0` |
 | `seleccion` | `IfK` | condición; `JEQ 0,→else(7)`; then; `LDA 7,→fin(7)`; else |
 | `repeticion` (`do … until`) | `RepeatK` | cuerpo; condición; `JEQ 0,→cuerpo(7)` |
 | `iteracion` (`while`) | (no existe) | condición; `JEQ 0,→salida(7)`; cuerpo; `LDA 7,→condición(7)` |
@@ -463,7 +470,8 @@ operando guardado).
 | `OP_LT`, `OP_EQ` | `OpK` (`LT`, `EQ`) | izq; `ST 0,t(6)`; der; `LD 1,t(6)`; `SUB 0,1,0`; `JLT`/`JEQ 0,2(7)`; `LDC 0,0(0)`; `LDA 7,1(7)`; `LDC 0,1(0)` |
 | `OP_LE`, `OP_GT`, `OP_GE`, `OP_NE` | (no existen) | Igual que `<`, con `JLE`, `JGT`, `JGE`, `JNE` |
 | `OP_MODULO` | (no existe) | operandos; `DIV 2,1,0`; `MUL 2,2,0`; `SUB 0,1,2` (izq − (izq / der) · der) |
-| `OP_POWER` | (no existe) | operandos; `LDC 2,1(0)`; `JLE 0,3(7)`; `MUL 2,2,1`; `LDA 0,-1(0)`; `LDA 7,-4(7)`; `LDA 0,0(2)`. Si el resultado es `float`: antes guarda el exponente en `ac3` y lo vuelve positivo (`LDA 3,0(0)`; `JGE 0,2(7)`; `LDC 2,0(0)`; `SUB 0,2,0`), y después, si era negativo, calcula 1 / resultado (`JGE 3,2(7)`; `LDC 0,1(0)`; `DIVR 2,0,2`) |
+| `OP_POWER` entre `int` | (no existe) | operandos; `LDC 2,1(0)`; `JLE 0,3(7)`; `MUL 2,2,1`; `LDA 0,-1(0)`; `LDA 7,-4(7)`; `LDA 0,0(2)`. Un ciclo de multiplicaciones: es exacto, mientras que `pow` con reales podría dar 99.999… |
+| `OP_POWER` `float` | (no existe) | operandos; `POW 0,1,0` (acepta exponentes con decimales y negativos) |
 | `OP_AND` | (no existe) | operandos; `JEQ 1,3(7)`; `JEQ 0,2(7)`; `LDC 0,1(0)`; `LDA 7,1(7)`; `LDC 0,0(0)` |
 | `OP_OR` | (no existe) | operandos; `JNE 1,3(7)`; `JNE 0,2(7)`; `LDC 0,0(0)`; `LDA 7,1(7)`; `LDC 0,1(0)` |
 | `OP_NOT` | (no existe) | operando; `JEQ 0,2(7)`; `LDC 0,0(0)`; `LDA 7,1(7)`; `LDC 0,1(0)` |
@@ -502,15 +510,14 @@ Ejemplo (`fact = fact * x;`, direcciones 16 a 21 del factorial):
 En el `.ci` la misma sentencia es `t2 = fact * x` / `fact = t2`. El temporal `t2` es
 simbólico y no corresponde a una dirección del `.tm`.
 
-**Lo que la TM no puede representar:**
+**Límites y errores:**
 
 | Caso | Qué pasa |
 |---|---|
-| `^` con exponente `float` (`x ^ 0.5`) | Error de generación: el ciclo solo multiplica un número entero de veces. No se genera el `.tm`, pero sí el `.ci` |
-| Texto en `cout` | `OUT` solo imprime números. El texto se omite con un aviso y un comentario en el `.tm` |
-| Más de 1024 instrucciones, o más de 1024 variables y temporales | Error de generación |
+| Más de 1024 instrucciones, o más de 1024 variables y temporales | Error de generación: no se genera el `.tm`, pero sí el `.ci`. Los ejercicios más largos del PDF usan unas 200 instrucciones |
 | `^` entero con exponente negativo | Da 1: el ciclo de multiplicaciones no se ejecuta (con una constante negativa el análisis semántico ya da error). Con resultado `float` sí se calcula (`2.0 ^ -1` = 0.5) |
-| División o residuo entre cero | Lo detecta el simulador al ejecutar: `Error: division entre cero` |
+| División o residuo entre cero, `0.0 ^ negativo` | Lo detecta el simulador al ejecutar: `Error: division entre cero` |
+| Potencia sin resultado real (`-4.0 ^ 0.5`) | Lo detecta el simulador al ejecutar: `Error: potencia sin resultado real` |
 
 **Archivos y ejecución.** Con las fases `intermediate`, `execution` y `all`, el compilador
 escribe `programa.ci` y `programa.tm` junto al fuente, como `tiny.exe`. Si alguno no se

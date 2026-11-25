@@ -1,0 +1,33 @@
+// Repetitivo: N fábricas, cada una con su clave y 12 producciones mensuales. Imprime
+// clave y total de cada una (y su clave otra vez si julio pasó de 3 000 000), y al final
+// la clave y el total de la que más produjo.
+main {
+  int n, i, mes, clave, clavemax;
+  float produccion, total, totalmax, julio;
+  cin >> n;
+  totalmax = -1;
+  clavemax = 0;
+  i = 1;
+  while i <= n {
+    cin >> clave;
+    total = 0;
+    julio = 0;
+    mes = 1;
+    while mes <= 12 {
+      cin >> produccion;
+      total = total + produccion;
+      if mes == 7 then julio = produccion; end
+      mes++;
+    }
+    cout << clave;
+    cout << total;
+    if julio > 3000000 then cout << clave; end
+    if total > totalmax then
+      totalmax = total;
+      clavemax = clave;
+    end
+    i++;
+  }
+  cout << clavemax;
+  cout << totalmax;
+}

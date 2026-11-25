@@ -1,0 +1,38 @@
+// Repetitivo: lluvias de 12 meses en 3 regiones (1 = norte, 2 = centro, 3 = sur).
+// Imprime el promedio anual del centro, el mes y la lluvia menores del sur y la región
+// con más lluvia en el año. Sin arreglos: se leen los 36 datos región por región.
+main {
+  int region, mes, mesmenor, regionmayor;
+  float lluvia, suma, sumacentro, menor, mayorsuma;
+  region = 1;
+  mayorsuma = -1;
+  sumacentro = 0;
+  menor = 0;
+  mesmenor = 0;
+  regionmayor = 0;
+  while region <= 3 {
+    suma = 0;
+    mes = 1;
+    while mes <= 12 {
+      cin >> lluvia;
+      suma = suma + lluvia;
+      if region == 3 then
+        if mes == 1 || lluvia < menor then
+          menor = lluvia;
+          mesmenor = mes;
+        end
+      end
+      mes++;
+    }
+    if region == 2 then sumacentro = suma; end
+    if suma > mayorsuma then
+      mayorsuma = suma;
+      regionmayor = region;
+    end
+    region++;
+  }
+  cout << sumacentro / 12;
+  cout << mesmenor;
+  cout << menor;
+  cout << regionmayor;
+}

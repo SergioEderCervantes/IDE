@@ -51,7 +51,7 @@ def _correr(tm_exe: str, tmp_path: Path, fuente: str, entradas=()) -> str:
     archivo.write_text(_tm(fuente).texto(), encoding="utf-8")
     teclado = "g\n" + "".join(f"{x}\n" for x in entradas) + "q\n"
     proc = subprocess.run([tm_exe, str(archivo)], input=teclado, capture_output=True,
-                          text=True, timeout=20)
+                          text=True, encoding="utf-8", errors="replace", timeout=20)
     return proc.stdout
 
 
@@ -281,6 +281,20 @@ def test_exponente_negativo_da_1(tm_exe, tmp_path):
     ("mayor_reales", [1.5, 7.25, 3], [7.25]),
     ("mayor_reales", [-2.5, -2.5, -9], [-2.5]),
     ("serie_alternada", [4], [1 - 1 / 2 + 1 / 3 - 1 / 4]),
+    # los largos (el ejercicio 5 de casi todos los grupos)
+    ("lluvias",
+     [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
+      5, 15, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115.5,
+      12, 8, 30, 4.5, 50, 60, 70, 80, 90, 100, 110, 120],
+     [720.5 / 12, 4, 4.5, 1]),
+    ("vino", [3, 10, 20, 30, 40, 50, 5, 25, 0, 10, 10, 1, 22, 3, 4, 5],
+     [150, 50, 35, 16, 67, 33, 54, 65, 2, 25, 2]),
+    ("fabricas",
+     [3, 101] + [100] * 6 + [3500000] + [100] * 5
+     + [102] + [1000] * 12 + [103] + [2000000] * 12,
+     [101, 3501100, 101, 102, 12000, 103, 24000000, 103, 24000000]),
+    ("estadio", [10, 20.5, 30, 40, 50.25, 1, 2, 3, 4, 5, 1, 1, 3, -1, -1],
+     [1, 2, 20, 3, 4, 120, 5, 1, 50.25, 1, 3, 30, 5, 0, 4, 0, 1, 220.25]),
 ])
 def test_ejercicios(tm_exe, tmp_path, nombre, entradas, esperado):
     fuente = (_EJERCICIOS / f"{nombre}.txt").read_text(encoding="utf-8")
@@ -359,7 +373,7 @@ def test_programa_de_enteros_no_usa_las_instrucciones_nuevas():
     """Así sigue siendo igual al del tiny.exe de la materia."""
     for nombre in ("factorial", "aritmetica", "anidado"):
         tm = _tm((_TINY / f"{nombre}.txt").read_text(encoding="utf-8"))
-        assert not {"INR", "DIVR"} & {i.op for i in tm.instrucciones}
+        assert not {"INR", "DIVR", "OUTC", "OUTN", "POW"} & {i.op for i in tm.instrucciones}
 
 
 def test_division_real_entre_cero(tm_exe, tmp_path):
@@ -373,30 +387,57 @@ def test_potencia_real_con_exponente_negativo_de_cero(tm_exe, tmp_path):
     assert "Error: division entre cero" in consola
 
 
-# ─── Lo que la TM no puede hacer ─────────────────────────────────────────────
+# ─── Potencia real (POW) ─────────────────────────────────────────────────────
 
-def test_exponente_float_es_un_error_de_generacion():
-    r = compile_source("main {\n  float x, y;\n  x = 2.0;\n  y = x ^ x;\n}", "execution")
-    assert r.errores[SEMANTICO] == [] and r.tm is None
-    assert r.intermedio is not None  # el .ci sí se puede generar
-    [error] = r.errores[GENERACION]
-    assert (error.linea, error.columna) == (4, 11)
-    assert "exponente entero" in error.mensaje
-    assert any("no se puede ejecutar" in a for a in r.avisos)
+def test_potencia_real_usa_pow_y_la_entera_el_ciclo():
+    tm = _tm("main { int n; float x; n = 2 ^ 3; x = 2.0 ^ 0.5; x = x ^ 2; }")
+    ops = [i.op for i in tm.instrucciones]
+    assert ops.count("POW") == 2 and ops.count("MUL") == 1  # el MUL es el del ciclo entero
 
 
-def test_exponente_entero_de_una_base_real_si_se_puede():
-    r = compile_source("main { float x; x = 1.5; x = x ^ 3; }", "execution")
-    assert r.tm is not None and r.errores[GENERACION] == []
+def test_potencia_con_exponente_real(tm_exe, tmp_path):
+    fuente = "main { float x, y; cin >> x; cin >> y; cout << x ^ y; cout << x ^ 0.5; cout << 2.0 ^ -2; }"
+    assert _ejecutar(tm_exe, tmp_path, fuente, [9, 1.5]) == pytest.approx([27, 3, 0.25])
 
 
-def test_texto_del_cout_se_omite_con_aviso(tm_exe, tmp_path):
-    fuente = 'main {\n int x;\n x = 7;\n cout << "x vale " << x;\n cout << x << " fin";\n}'
+def test_potencia_sin_resultado_real(tm_exe, tmp_path):
+    consola = _correr(tm_exe, tmp_path, "main { float x; cin >> x; cout << x ^ 0.5; }", [-4])
+    assert "Error: potencia sin resultado real" in consola
+
+
+# ─── Texto en cout (OUTC / OUTN) ─────────────────────────────────────────────
+
+def test_texto_del_cout_sale_en_la_misma_linea(tm_exe, tmp_path):
+    fuente = ('main {\n int x;\n float p;\n x = 7;\n p = 2.5;\n'
+              ' cout << "x vale " << x;\n cout << x << " fin";\n cout << "Precio: " << p;\n'
+              ' cout << "Hola";\n cout << x;\n}')
     r = compile_source(fuente, "execution")
-    assert r.tm is not None and r.errores[GENERACION] == []
-    assert sum("se omitió el texto" in a for a in r.avisos) == 2
-    assert '* cout: se omite el texto "x vale " (OUT solo imprime números)' in r.tm.texto()
-    assert _ejecutar(tm_exe, tmp_path, fuente) == [7, 7]
+    assert r.tm is not None and r.errores[GENERACION] == [] and r.avisos == []
+    consola = _correr(tm_exe, tmp_path, fuente)
+    assert re.findall(r"Resultado del programa \(OUT\): (.*)", consola) == [
+        "x vale 7", "7 fin", "Precio: 2.5", "Hola", "7",
+    ]
+
+
+def test_texto_con_acentos(tm_exe, tmp_path):
+    consola = _correr(tm_exe, tmp_path, 'main { int n; n = 3; cout << "Año número: " << n; }')
+    assert "Resultado del programa (OUT): Año número: 3" in consola
+
+
+def test_texto_se_escribe_byte_por_byte():
+    tm = _tm('main { int x; x = 1; cout << "Añ" << x; }')
+    pares = [(i.op, i.operandos()) for i in tm.instrucciones if i.op in ("LDC", "OUTC", "OUTN")]
+    assert pares == [
+        ("LDC", "0,1(0)"),                      # x = 1
+        ("LDC", "0,65(0)"), ("OUTC", "0,0,0"),  # A
+        ("LDC", "0,195(0)"), ("OUTC", "0,0,0"),  # ñ en UTF-8: 195 177
+        ("LDC", "0,177(0)"), ("OUTC", "0,0,0"),
+        ("OUTN", "0,0,0"),                      # x
+        ("LDC", "0,10(0)"), ("OUTC", "0,0,0"),  # fin de línea
+    ]
+
+
+# ─── Lo que la TM no puede hacer ─────────────────────────────────────────────
 
 
 def test_programa_demasiado_grande():
@@ -437,7 +478,8 @@ def test_escribe_ci_y_tm_y_borra_los_viejos(tmp_path):
 def test_error_de_generacion_deja_el_ci_pero_no_el_tm(tmp_path):
     fuente = tmp_path / "prog.txt"
     (tmp_path / "prog.tm").write_text("viejo", encoding="utf-8")
-    r = compile_source("main { float x; x = 1.5; x = x ^ x; }", "execution")
+    cuerpo = "".join(f"  x = x + {i};\n" for i in range(IADDR_SIZE // 6 + 1))
+    r = compile_source("main {\n int x;\n x = 0;\n" + cuerpo + "}", "execution")
     assert escribir_salidas(fuente, r) is None
     assert (tmp_path / "prog.ci").exists() and not (tmp_path / "prog.tm").exists()
 

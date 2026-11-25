@@ -34,15 +34,16 @@ GP = 5    # "global pointer": apunta al inicio de la memoria; ahí están las va
 AC = 0    # acumulador
 AC1 = 1   # segundo acumulador
 AC2 = 2   # tercer registro: TINY no lo usa; aquí lo usan %, ^, && y ||
-AC3 = 3   # guarda el exponente de una potencia real (TINY tampoco lo usa)
 
 # ─── Límites del simulador (tm.c) ────────────────────────────────────────────
 IADDR_SIZE = 1024   # memoria de instrucciones
 DADDR_SIZE = 1024   # memoria de datos
 
 # Instrucciones de solo registros (RO); las demás son registro-memoria (RM / RA).
-# INR (leer un real) y DIVR (división real) son la extensión de TM/tm.c para reales.
-OPS_RO = frozenset({"HALT", "IN", "OUT", "ADD", "SUB", "MUL", "DIV", "INR", "DIVR"})
+# INR (leer un real), DIVR (división real), OUTC (escribir un carácter), OUTN (escribir un
+# número sin terminar la línea) y POW (potencia real) son la extensión de TM/tm.c.
+OPS_RO = frozenset({"HALT", "IN", "OUT", "ADD", "SUB", "MUL", "DIV",
+                    "INR", "DIVR", "OUTC", "OUTN", "POW"})
 
 
 @dataclass(frozen=True)

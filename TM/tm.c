@@ -14,8 +14,13 @@
 /*    hacia cero); DIVR (nueva) es la division real. */
 /*  - OUT y los comandos r y d imprimen sin         */
 /*    decimales los valores enteros.                */
-/* Un programa de solo enteros se ejecuta y se ve   */
-/* igual que con el tm.c original.                  */
+/*  - OUTC (nueva) escribe un caracter y OUTN       */
+/*    (nueva) un numero, en la misma linea; el      */
+/*    caracter '\n' (10) termina la linea. Asi un   */
+/*    cout con texto sale en una sola linea.        */
+/*  - POW (nueva) es la potencia real.              */
+/* Un programa de solo enteros sin texto se ejecuta */
+/* y se ve igual que con el tm.c original.          */
 /* Los cambios estan marcados con "EXTENSION".      */
 /****************************************************/
 
@@ -23,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <math.h>   /* EXTENSION: floor, trunc, fabs */
+#include <math.h>   /* EXTENSION: floor, trunc, fabs, pow */
 
 #ifndef TRUE
 #define TRUE 1
@@ -60,6 +65,9 @@ typedef enum {
    opDIV,    /* RR     reg(r) = reg(s)/reg(t), truncada (division entera) */
    opINR,     /* RR     EXTENSION: read a real number into reg(r) */
    opDIVR,    /* RR     EXTENSION: reg(r) = reg(s)/reg(t), division real */
+   opOUTC,    /* RR     EXTENSION: write the character reg(r) */
+   opOUTN,    /* RR     EXTENSION: write reg(r) without ending the line */
+   opPOW,     /* RR     EXTENSION: reg(r) = reg(s) ^ reg(t), potencia real */
    opRRLim,   /* limit of RR opcodes */
 
    /* RM instructions */
@@ -84,7 +92,8 @@ typedef enum {
    srHALT,
    srIMEM_ERR,
    srDMEM_ERR,
-   srZERODIVIDE
+   srZERODIVIDE,
+   srPOWERR    /* EXTENSION: potencia sin resultado real */
    } STEPRESULT;
 
 typedef struct {
@@ -106,7 +115,7 @@ double dMem [DADDR_SIZE];  /* EXTENSION: reales */
 double reg [NO_REGS];      /* EXTENSION: reales */
 
 char * opCodeTab[]
-        = {"HALT","IN","OUT","ADD","SUB","MUL","DIV","INR","DIVR","????",
+        = {"HALT","IN","OUT","ADD","SUB","MUL","DIV","INR","DIVR","OUTC","OUTN","POW","????",
             /* RR opcodes */
            "LD","ST","????", /* RM opcodes */
            "LDA","LDC","JLT","JLE","JGT","JGE","JEQ","JNE","????"
@@ -115,7 +124,8 @@ char * opCodeTab[]
 
 char * stepResultTab[]
         = {"Correcto","Ejecucion finalizada (HALT)","Error: memoria de instrucciones",
-           "Error: memoria de datos","Error: division entre cero"
+           "Error: memoria de datos","Error: division entre cero",
+           "Error: potencia sin resultado real"  /* EXTENSION */
           };
 
 char pgmName[1024];
@@ -126,6 +136,11 @@ int lineLen ;
 int inCol  ;
 int num  ;
 double rnum ;  /* EXTENSION: numero leido por getReal */
+
+/* EXTENSION: OUTC y OUTN escriben en una linea que empieza con el mismo
+   letrero que OUT; lineaAbierta dice si ya se escribio el letrero */
+#define LETRERO_OUT "Resultado del programa (OUT): "
+int lineaAbierta = FALSE;
 char word[WORDSIZE] ;
 char ch  ;
 int done  ;
@@ -467,7 +482,24 @@ STEPRESULT stepTM (void)
 
     case opOUT :
       formatNumber(reg[r], buf, sizeof(buf));  /* EXTENSION */
+      if (lineaAbierta) { printf("\n"); lineaAbierta = FALSE; }  /* EXTENSION */
       printf ("Resultado del programa (OUT): %s\n", buf ) ;
+      break;
+
+    case opOUTC :
+    /***********************************/
+    /* EXTENSION: escribe un caracter (un byte); '\n' termina la linea */
+      if (!lineaAbierta) { printf(LETRERO_OUT); lineaAbierta = TRUE; }
+      if ((int) reg[r] == '\n') { printf("\n"); lineaAbierta = FALSE; }
+      else putchar((int) reg[r]);
+      break;
+
+    case opOUTN :
+    /***********************************/
+    /* EXTENSION: escribe un numero sin terminar la linea */
+      if (!lineaAbierta) { printf(LETRERO_OUT); lineaAbierta = TRUE; }
+      formatNumber(reg[r], buf, sizeof(buf));
+      printf("%s", buf);
       break;
     case opADD :  reg[r] = reg[s] + reg[t] ;  break;
     case opSUB :  reg[r] = reg[s] - reg[t] ;  break;
@@ -484,6 +516,14 @@ STEPRESULT stepTM (void)
     /* EXTENSION: division real */
       if ( reg[t] != 0 ) reg[r] = reg[s] / reg[t];
       else return srZERODIVIDE ;
+      break;
+
+    case opPOW :
+    /***********************************/
+    /* EXTENSION: potencia real; 0 ^ negativo es dividir entre cero */
+      if ( (reg[s] == 0) && (reg[t] < 0) ) return srZERODIVIDE ;
+      reg[r] = pow(reg[s], reg[t]);
+      if ( isnan(reg[r]) || isinf(reg[r]) ) return srPOWERR ;
       break;
 
     /*************** RM instructions ********************/

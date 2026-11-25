@@ -97,10 +97,13 @@ Los errores además se subrayan en el editor y su mensaje aparece al pasar el mo
 - «Ejecutar de nuevo» vuelve a correrlo, y «Abrir en consola» abre el mismo simulador en
   una ventana aparte.
 
-La TM de la materia solo manejaba enteros; `TM/tm.c` está extendido para reales (detalle en
-GRAMATICA.md §12). Un `cin` de una variable `float` pide un número real (`INR`) y uno de
-`int` solo acepta enteros. La TM no imprime texto: lo que va entre comillas en un `cout` se
-omite con un aviso.
+La TM de la materia solo manejaba enteros y solo imprimía números. `TM/tm.c` está extendido
+para nuestro lenguaje (detalle en GRAMATICA.md §12):
+- maneja reales: un `cin` de una variable `float` pide un número real (`INR`) y uno de
+  `int` solo acepta enteros;
+- imprime texto: `cout << "Total: " << x;` sale como
+  `Resultado del programa (OUT): Total: 120`;
+- calcula potencias reales (`x ^ 0.5`).
 
 ## Usar el compilador desde la terminal
 

@@ -1,0 +1,50 @@
+// Repetitivo: litros de 5 tipos de vino durante N años. Imprime el total de cada año,
+// el total de cada tipo, el año y los litros máximos del tipo 2 y, si lo hubo, un año
+// en que no se produjo el tipo 3.
+main {
+  int n, anio, tipo, aniomax, aniosin;
+  float litros, t1, t2, t3, t4, t5, totalanio, max2;
+  cin >> n;
+  t1 = 0;
+  t2 = 0;
+  t3 = 0;
+  t4 = 0;
+  t5 = 0;
+  max2 = -1;
+  aniomax = 0;
+  aniosin = 0;
+  anio = 1;
+  while anio <= n {
+    totalanio = 0;
+    tipo = 1;
+    while tipo <= 5 {
+      cin >> litros;
+      totalanio = totalanio + litros;
+      if tipo == 1 then t1 = t1 + litros; end
+      if tipo == 2 then
+        t2 = t2 + litros;
+        if litros > max2 then
+          max2 = litros;
+          aniomax = anio;
+        end
+      end
+      if tipo == 3 then
+        t3 = t3 + litros;
+        if litros == 0 then aniosin = anio; end
+      end
+      if tipo == 4 then t4 = t4 + litros; end
+      if tipo == 5 then t5 = t5 + litros; end
+      tipo++;
+    }
+    cout << totalanio;
+    anio++;
+  }
+  cout << t1;
+  cout << t2;
+  cout << t3;
+  cout << t4;
+  cout << t5;
+  cout << aniomax;
+  cout << max2;
+  if aniosin != 0 then cout << aniosin; end
+}

@@ -9,6 +9,7 @@ reenvía lo que escriba el usuario. tm.c vacía su salida (fflush) antes de pedi
 o un número, así que cada pregunta llega a tiempo a la consola del IDE.
 """
 from __future__ import annotations
+import codecs
 import os
 import subprocess
 import sys
@@ -49,6 +50,9 @@ class TMRunner(QObject):
         self._process.finished.connect(lambda *_: self.termino.emit())
         self._process.errorOccurred.connect(self._error)
         self.archivo: Optional[str] = None
+        # El texto de un cout sale en UTF-8 byte por byte (OUTC): una letra con acento puede
+        # quedar partida entre dos lecturas, así que se decodifica de forma incremental
+        self._decodificador = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
     def is_running(self) -> bool:
         return self._process.state() != QProcess.ProcessState.NotRunning
@@ -61,6 +65,7 @@ class TMRunner(QObject):
         if simulador is None:
             self.fallo.emit(SIN_SIMULADOR)
             return
+        self._decodificador.reset()
         self._process.setWorkingDirectory(str(Path(archivo_tm).parent))
         self._process.start(str(simulador), [archivo_tm])
         self.enviar("g")
@@ -83,13 +88,17 @@ class TMRunner(QObject):
             return SIN_SIMULADOR
         if sys.platform != "win32":
             return "Abrir en consola solo está disponible en Windows; usa la consola de esta pestaña."
-        subprocess.Popen([str(simulador), archivo_tm], cwd=str(Path(archivo_tm).parent),
+        # chcp 65001: la consola en UTF-8, para que el texto con acentos de un cout se vea bien
+        comando = f'cmd /c chcp 65001 >nul & "{simulador}" "{archivo_tm}"'
+        subprocess.Popen(comando, cwd=str(Path(archivo_tm).parent),
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
         return None
 
     def _leer(self) -> None:
         datos = bytes(self._process.readAllStandardOutput())  # type: ignore
-        self.salida.emit(datos.decode("utf-8", errors="replace"))
+        texto = self._decodificador.decode(datos)
+        if texto:
+            self.salida.emit(texto)
 
     def _error(self, error: QProcess.ProcessError) -> None:
         if error == QProcess.ProcessError.FailedToStart:
