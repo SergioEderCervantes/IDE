@@ -54,8 +54,8 @@ En Linux o macOS cambia `.venv/Scripts/` por `.venv/bin/`. Los dos paquetes van 
 entorno porque el IDE ejecuta el compilador con su mismo Python.
 
 El simulador ya viene compilado en `TM/tm.exe`. Si hace falta volver a compilarlo, corre
-`TM/compilar_tm.bat` (necesita el `gcc` de MinGW en el PATH). Fuera de Windows:
-`gcc -O2 -o TM/tm TM/tm.c`.
+`TM/compilar_tm.bat` (necesita el `gcc` de MinGW en el PATH). En Linux, corre
+`TM/compilar_tm.sh` (necesita `gcc`): deja el ejecutable en `TM/tm`, que es donde lo busca el IDE.
 
 ## Usar el IDE
 

@@ -33,7 +33,8 @@ def ruta_simulador() -> Optional[Path]:
 
 SIN_SIMULADOR = (
     f"No se encontró el simulador TM en {_CARPETA_TM}.\n"
-    "Compílalo con TM/compilar_tm.bat (necesita gcc) o indica otro con la variable ARCANE_TM."
+    f"Compílalo con TM/{'compilar_tm.bat' if sys.platform == 'win32' else 'compilar_tm.sh'} "
+    "(necesita gcc) o indica otro con la variable ARCANE_TM."
 )
 
 
